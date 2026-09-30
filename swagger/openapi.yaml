@@ -1,11 +1,5 @@
 components:
   parameters:
-    Cursor:
-      in: query
-      name: cursor
-      schema:
-        minLength: 1
-        type: string
     IdempotencyKey:
       example: 00000000-0000-4000-8000-000000000801
       in: header
@@ -14,14 +8,6 @@ components:
       schema:
         format: uuid
         type: string
-    Limit:
-      in: query
-      name: limit
-      schema:
-        default: 50
-        maximum: 200
-        minimum: 1
-        type: integer
     battery_id:
       example: 00000000-0000-4000-8000-000000000412
       in: path
@@ -211,19 +197,15 @@ components:
         - created_at
         - updated_at
       type: object
-    BatteryPage:
+    BatteryList:
       additionalProperties: false
       properties:
         items:
           items:
             $ref: '#/components/schemas/Battery'
           type: array
-        next_cursor:
-          nullable: true
-          type: string
       required:
         - items
-        - next_cursor
       type: object
     CommandResult:
       additionalProperties: false
@@ -293,19 +275,15 @@ components:
         - employee_id
         - value
       type: object
-    CredentialPage:
+    CredentialList:
       additionalProperties: false
       properties:
         items:
           items:
             $ref: '#/components/schemas/Credential'
           type: array
-        next_cursor:
-          nullable: true
-          type: string
       required:
         - items
-        - next_cursor
       type: object
     CredentialResolution:
       additionalProperties: false
@@ -362,19 +340,15 @@ components:
         - display_name
         - personnel_number
       type: object
-    EmployeePage:
+    EmployeeList:
       additionalProperties: false
       properties:
         items:
           items:
             $ref: '#/components/schemas/Employee'
           type: array
-        next_cursor:
-          nullable: true
-          type: string
       required:
         - items
-        - next_cursor
       type: object
     Error:
       additionalProperties: false
@@ -504,19 +478,15 @@ components:
         - device_code
         - occurred_at
       type: object
-    OperationPage:
+    OperationList:
       additionalProperties: false
       properties:
         items:
           items:
             $ref: '#/components/schemas/Operation'
           type: array
-        next_cursor:
-          nullable: true
-          type: string
       required:
         - items
-        - next_cursor
       type: object
     PatchEmployee:
       additionalProperties: false
@@ -603,8 +573,6 @@ paths:
     get:
       operationId: listBatteries
       parameters:
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Cursor'
         - in: query
           name: inventory_code
           schema:
@@ -643,9 +611,8 @@ paths:
                     status: STORED
                     updated_at: "2026-09-30T09:14:00Z"
                     version: 1
-                next_cursor: null
               schema:
-                $ref: '#/components/schemas/BatteryPage'
+                $ref: '#/components/schemas/BatteryList'
           description: Успешно
         "400":
           $ref: '#/components/responses/Error400'
@@ -853,8 +820,6 @@ paths:
       operationId: listBatteryOperations
       parameters:
         - $ref: '#/components/parameters/battery_id'
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Cursor'
       responses:
         "200":
           content:
@@ -875,9 +840,8 @@ paths:
                     source_location: null
                     source_status: null
                     type: STORE
-                next_cursor: null
               schema:
-                $ref: '#/components/schemas/OperationPage'
+                $ref: '#/components/schemas/OperationList'
           description: Успешно
         "400":
           $ref: '#/components/responses/Error400'
@@ -1096,8 +1060,6 @@ paths:
     get:
       operationId: listEmployees
       parameters:
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Cursor'
         - in: query
           name: is_active
           schema:
@@ -1115,9 +1077,8 @@ paths:
                     is_active: true
                     personnel_number: "004281"
                     updated_at: "2026-09-30T09:14:00Z"
-                next_cursor: null
               schema:
-                $ref: '#/components/schemas/EmployeePage'
+                $ref: '#/components/schemas/EmployeeList'
           description: Успешно
         "400":
           $ref: '#/components/responses/Error400'
@@ -1275,8 +1236,6 @@ paths:
       operationId: listEmployeeBatteries
       parameters:
         - $ref: '#/components/parameters/employee_id'
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Cursor'
       responses:
         "200":
           content:
@@ -1292,9 +1251,8 @@ paths:
                     status: STORED
                     updated_at: "2026-09-30T09:14:00Z"
                     version: 1
-                next_cursor: null
               schema:
-                $ref: '#/components/schemas/BatteryPage'
+                $ref: '#/components/schemas/BatteryList'
           description: Успешно
         "400":
           $ref: '#/components/responses/Error400'
@@ -1314,8 +1272,6 @@ paths:
       operationId: listCredentials
       parameters:
         - $ref: '#/components/parameters/employee_id'
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Cursor'
       responses:
         "200":
           content:
@@ -1329,9 +1285,8 @@ paths:
                     is_active: true
                     updated_at: "2026-09-30T09:14:00Z"
                     value: "0004097281923"
-                next_cursor: null
               schema:
-                $ref: '#/components/schemas/CredentialPage'
+                $ref: '#/components/schemas/CredentialList'
           description: Успешно
         "400":
           $ref: '#/components/responses/Error400'
@@ -1459,8 +1414,6 @@ paths:
       operationId: listEmployeeOperations
       parameters:
         - $ref: '#/components/parameters/employee_id'
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Cursor'
       responses:
         "200":
           content:
@@ -1481,9 +1434,8 @@ paths:
                     source_location: null
                     source_status: null
                     type: STORE
-                next_cursor: null
               schema:
-                $ref: '#/components/schemas/OperationPage'
+                $ref: '#/components/schemas/OperationList'
           description: Успешно
         "400":
           $ref: '#/components/responses/Error400'
@@ -1502,8 +1454,6 @@ paths:
     get:
       operationId: listOperations
       parameters:
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Cursor'
         - in: query
           name: battery_id
           schema:
@@ -1564,9 +1514,8 @@ paths:
                     source_location: null
                     source_status: null
                     type: STORE
-                next_cursor: null
               schema:
-                $ref: '#/components/schemas/OperationPage'
+                $ref: '#/components/schemas/OperationList'
           description: Успешно
         "400":
           $ref: '#/components/responses/Error400'

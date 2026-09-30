@@ -5,12 +5,20 @@ import (
 	"context"
 )
 
-func (r *Repository) GetBattery(ctx context.Context, id string) (model.Battery, error) {
-	return getBattery(ctx, r.db, id)
+func (r *Repository) GetBatteryByID(ctx context.Context, id string) (model.Battery, error) {
+	query := batterySelect + ` WHERE b.id = $1`
+	var battery model.Battery
+	err := r.db.QueryRowContext(ctx, query, id).Scan(
+		&battery.ID, &battery.InventoryCode, &battery.SerialNumber, &battery.Status,
+		&battery.CurrentLocation, &battery.CurrentHolderEmployeeID,
+		&battery.Version, &battery.CreatedAt, &battery.UpdatedAt,
+	)
+	battery.CreatedAt, battery.UpdatedAt = battery.CreatedAt.UTC(), battery.UpdatedAt.UTC()
+	return battery, err
 }
 
 func (tx *Tx) GetBattery(ctx context.Context, id string) (model.Battery, error) {
-	return getBattery(ctx, tx.tx, id)
+	return scanBattery(tx.tx.QueryRowContext(ctx, batterySelect+` WHERE b.id = $1`, id))
 }
 
 func (tx *Tx) LockBattery(ctx context.Context, id string) (model.Battery, error) {

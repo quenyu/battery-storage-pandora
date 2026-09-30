@@ -2,7 +2,6 @@ package repository
 
 import (
 	"battery-storage-pandora/internal/model"
-	"context"
 )
 
 const employeeSelect = `
@@ -24,10 +23,6 @@ func scanEmployee(row scanner) (model.Employee, error) {
 	return employee, err
 }
 
-func getEmployee(ctx context.Context, q queryer, id string) (model.Employee, error) {
-	return scanEmployee(q.QueryRowContext(ctx, employeeSelect+` WHERE e.id=$1`, id))
-}
-
 const credentialSelect = `
     SELECT c.id, c.employee_id, c.value,
            c.created_at, c.updated_at, c.disabled_at
@@ -47,10 +42,6 @@ func scanCredential(row scanner) (model.Credential, error) {
 	return credential, err
 }
 
-func getCredential(ctx context.Context, q queryer, employeeID, credentialID string) (model.Credential, error) {
-	return scanCredential(q.QueryRowContext(ctx, credentialSelect+` WHERE c.employee_id=$1 AND c.id=$2`, employeeID, credentialID))
-}
-
 const batterySelect = `
     SELECT b.id, b.inventory_code, b.serial_number, b.status,
            b.current_location, b.current_holder_employee_id,
@@ -65,10 +56,6 @@ func scanBattery(row scanner) (model.Battery, error) {
 		&battery.CreatedAt, &battery.UpdatedAt)
 	battery.CreatedAt, battery.UpdatedAt = battery.CreatedAt.UTC(), battery.UpdatedAt.UTC()
 	return battery, err
-}
-
-func getBattery(ctx context.Context, q queryer, id string) (model.Battery, error) {
-	return scanBattery(q.QueryRowContext(ctx, batterySelect+` WHERE b.id=$1`, id))
 }
 
 const operationSelect = `
@@ -91,8 +78,4 @@ func scanOperation(row scanner) (model.Operation, error) {
 		&operation.DeviceCode, &operation.OccurredAt)
 	operation.OccurredAt = operation.OccurredAt.UTC()
 	return operation, err
-}
-
-func getOperation(ctx context.Context, q queryer, id string) (model.Operation, error) {
-	return scanOperation(q.QueryRowContext(ctx, operationSelect+` WHERE o.id=$1`, id))
 }

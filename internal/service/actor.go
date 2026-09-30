@@ -33,14 +33,18 @@ func commandActor(ctx context.Context, tx *repository.Tx, value string) (model.E
 }
 
 func (s *Service) ResolveCredential(ctx context.Context, value string) (model.CredentialResolution, error) {
-	tx, err := s.repo.Begin(ctx)
+	employee, credential, err := s.repo.GetEmployeeAndCredentialByValue(ctx, value)
 	if err != nil {
+		if ClassifyError(err).Code == "RESOURCE_NOT_FOUND" {
+			err = model.NewError(404, "CREDENTIAL_NOT_FOUND", "Карта не найдена")
+		}
 		return model.CredentialResolution{}, err
 	}
-	defer tx.Rollback()
-	employee, credential, err := commandActor(ctx, tx, value)
-	if err != nil {
-		return model.CredentialResolution{}, err
+	if !employee.IsActive {
+		return model.CredentialResolution{}, model.NewError(403, "EMPLOYEE_INACTIVE", "Сотрудник отключён")
+	}
+	if !credential.IsActive {
+		return model.CredentialResolution{}, model.NewError(403, "CREDENTIAL_INACTIVE", "Карта отключена")
 	}
 	return model.CredentialResolution{Employee: employee, CredentialID: credential.ID}, nil
 }

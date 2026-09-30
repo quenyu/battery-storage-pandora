@@ -6,7 +6,7 @@ import (
 )
 
 func (tx *Tx) GetCredential(ctx context.Context, employeeID, credentialID string) (model.Credential, error) {
-	return getCredential(ctx, tx.tx, employeeID, credentialID)
+	return scanCredential(tx.tx.QueryRowContext(ctx, credentialSelect+` WHERE c.employee_id = $1 AND c.id = $2`, employeeID, credentialID))
 }
 
 func (tx *Tx) FindCredential(ctx context.Context, value string) (model.Credential, error) {
@@ -50,4 +50,37 @@ func (tx *Tx) DisableCredential(ctx context.Context, employeeID, credentialID st
         WHERE employee_id = $1 AND id = $2 AND disabled_at IS NULL
     `, employeeID, credentialID)
 	return err
+}
+
+func (r *Repository) GetEmployeeAndCredentialByValue(ctx context.Context, value string) (model.Employee, model.Credential, error) {
+	query := `
+        SELECT e.id, e.personnel_number, e.display_name, e.created_at, e.updated_at, e.disabled_at,
+               c.id, c.employee_id, c.value, c.created_at, c.updated_at, c.disabled_at
+        FROM employee_credentials c
+        JOIN employees e ON e.id = c.employee_id
+        WHERE c.value = $1
+        ORDER BY c.disabled_at NULLS FIRST, c.created_at DESC, c.id DESC
+        LIMIT 1
+    `
+	var employee model.Employee
+	var credential model.Credential
+	err := r.db.QueryRowContext(ctx, query, value).Scan(
+		&employee.ID, &employee.PersonnelNumber, &employee.DisplayName,
+		&employee.CreatedAt, &employee.UpdatedAt, &employee.DisabledAt,
+		&credential.ID, &credential.EmployeeID, &credential.Value,
+		&credential.CreatedAt, &credential.UpdatedAt, &credential.DisabledAt,
+	)
+	employee.IsActive = employee.DisabledAt == nil
+	employee.CreatedAt, employee.UpdatedAt = employee.CreatedAt.UTC(), employee.UpdatedAt.UTC()
+	if employee.DisabledAt != nil {
+		disabledAt := employee.DisabledAt.UTC()
+		employee.DisabledAt = &disabledAt
+	}
+	credential.IsActive = credential.DisabledAt == nil
+	credential.CreatedAt, credential.UpdatedAt = credential.CreatedAt.UTC(), credential.UpdatedAt.UTC()
+	if credential.DisabledAt != nil {
+		disabledAt := credential.DisabledAt.UTC()
+		credential.DisabledAt = &disabledAt
+	}
+	return employee, credential, err
 }

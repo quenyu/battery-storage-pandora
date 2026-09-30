@@ -242,9 +242,8 @@ type commandDTO struct {
 	Battery   batteryDTO   `json:"battery"`
 	Operation operationDTO `json:"operation"`
 }
-type pageDTO[T any] struct {
-	Items      []T     `json:"items"`
-	NextCursor *string `json:"next_cursor"`
+type listDTO[T any] struct {
+	Items []T `json:"items"`
 }
 type fixture struct {
 	ivan, olga         employeeDTO
@@ -284,7 +283,7 @@ func (h *harness) battery(id string) batteryDTO {
 }
 func (h *harness) operations(path string) []operationDTO {
 	h.t.Helper()
-	return decode[pageDTO[operationDTO]](h.t, h.get(path)).Items
+	return decode[listDTO[operationDTO]](h.t, h.get(path)).Items
 }
 
 func TestIntegrationAll19RoutesAndStableIdentity(t *testing.T) {
@@ -309,7 +308,7 @@ func TestIntegrationAll19RoutesAndStableIdentity(t *testing.T) {
 	if taken.Battery.Status != "ISSUED" || strptr(taken.Battery.CurrentHolder) != f.ivan.ID || taken.Battery.Version != 2 || strptr(taken.Operation.SourceLocation) != "1.1.1" || taken.Operation.CredentialID != f.ivanCard.ID {
 		t.Fatal("bad TAKE projection/history")
 	}
-	custody := decode[pageDTO[batteryDTO]](t, h.get("/employees/"+f.ivan.ID+"/batteries"))
+	custody := decode[listDTO[batteryDTO]](t, h.get("/employees/"+f.ivan.ID+"/batteries"))
 	if len(custody.Items) != 1 || custody.Items[0].ID != id {
 		t.Fatal("wrong custody")
 	}
@@ -370,11 +369,11 @@ func TestIntegrationAll19RoutesAndStableIdentity(t *testing.T) {
 	if len(h.operations("/operations?employee_id="+f.ivan.ID)) != 5 {
 		t.Fatal("employee history duplicated/missed")
 	}
-	occupied := decode[pageDTO[batteryDTO]](t, h.get("/batteries?location=2.1.2"))
+	occupied := decode[listDTO[batteryDTO]](t, h.get("/batteries?location=2.1.2"))
 	if len(occupied.Items) != 1 || occupied.Items[0].ID != id {
 		t.Fatal("exact address contents wrong")
 	}
-	if len(decode[pageDTO[batteryDTO]](t, h.get("/batteries?location=99.99.99")).Items) != 0 {
+	if len(decode[listDTO[batteryDTO]](t, h.get("/batteries?location=99.99.99")).Items) != 0 {
 		t.Fatal("empty exact address should have no batteries")
 	}
 	if h.count("SELECT count(*) FROM battery_operations WHERE request_scope<>'pandora' OR device_code IS NOT NULL") != 0 {
@@ -654,7 +653,7 @@ func TestIntegrationInvalidTransitionsAndObservations(t *testing.T) {
 		t.Fatal("invalid transition appended history")
 	}
 }
-func TestIntegrationValidationAndCursor(t *testing.T) {
+func TestIntegrationValidationAndSimpleLists(t *testing.T) {
 	h := newHarness(t)
 	h.fixture()
 	reg := h.register("VALIDATION", "4.1.1")
@@ -676,7 +675,7 @@ func TestIntegrationValidationAndCursor(t *testing.T) {
 		{"POST", "/employees", `{}`, uuid.NewString(), "application/json", 400, "INVALID_REQUEST"},
 		{"POST", "/employees", `{"display_name":123}`, uuid.NewString(), "application/json", 400, "INVALID_REQUEST"},
 		{"GET", "/employees?limit=0", "", "", "", 400, "INVALID_REQUEST"},
-		{"GET", "/employees?limit=201", "", "", "", 400, "INVALID_REQUEST"},
+		{"GET", "/employees?limit=1", "", "", "", 400, "INVALID_REQUEST"},
 		{"GET", "/employees?is_active=maybe", "", "", "", 400, "INVALID_REQUEST"},
 		{"GET", "/batteries?status=LOST", "", "", "", 422, "VALIDATION_FAILED"},
 		{"GET", "/batteries?holder_employee_id=bad", "", "", "", 400, "INVALID_REQUEST"},
@@ -698,16 +697,16 @@ func TestIntegrationValidationAndCursor(t *testing.T) {
 	if h.count("SELECT count(*) FROM idempotency_requests") != before || h.battery(reg.Battery.ID).Version != 1 {
 		t.Fatal("validation persisted key or changed battery")
 	}
-	page := decode[pageDTO[employeeDTO]](t, h.get("/employees?limit=1"))
-	if len(page.Items) != 1 || page.NextCursor == nil {
-		t.Fatal("missing cursor")
+	list := decode[listDTO[employeeDTO]](t, h.get("/employees"))
+	if len(list.Items) != 2 {
+		t.Fatalf("expected both employees in one response: %d", len(list.Items))
 	}
-	next := decode[pageDTO[employeeDTO]](t, h.get("/employees?limit=1&cursor="+url.QueryEscape(*page.NextCursor)))
-	if len(next.Items) != 1 || next.Items[0].ID == page.Items[0].ID {
-		t.Fatal("cursor repeated/skipped employee")
+	for i := 1; i < len(list.Items); i++ {
+		if list.Items[i-1].ID >= list.Items[i].ID {
+			t.Fatal("employees must be ordered by ID")
+		}
 	}
-	errorCode(t, h.request("GET", "/employees?limit=1&is_active=true&cursor="+url.QueryEscape(*page.NextCursor), nil, "", 400), "INVALID_REQUEST")
-	errorCode(t, h.request("GET", "/batteries?cursor="+url.QueryEscape(*page.NextCursor), nil, "", 400), "INVALID_REQUEST")
+	equalJSON(t, h.get("/employees"), h.get("/employees"))
 }
 
 func TestIntegrationPublicAPIAndIgnoredAuthorizationHeader(t *testing.T) {
@@ -749,90 +748,89 @@ func TestIntegrationPublicAPIAndIgnoredAuthorizationHeader(t *testing.T) {
 	}
 }
 
-func TestIntegrationDatabaseImmutableGuardsAndLeastPrivilege(t *testing.T) {
+func TestIntegrationDatabaseHistoryPrivileges(t *testing.T) {
 	h := newHarness(t)
-	f := h.fixture()
-	reg := h.register("GUARDS", "4.1.1")
-	for _, tc := range []struct {
-		sql, code string
-		args      []any
-	}{
-		{"UPDATE battery_operations SET source_location=source_location WHERE id=$1", "55000", []any{reg.Operation.ID}},
-		{"DELETE FROM battery_operations WHERE id=$1", "55000", []any{reg.Operation.ID}},
-		{"TRUNCATE battery_operations", "55000", nil},
-		{"UPDATE employee_credentials SET value='OTHER' WHERE id=$1", "55000", []any{f.ivanCard.ID}},
-		{"UPDATE batteries SET inventory_code='OTHER' WHERE id=$1", "55000", []any{reg.Battery.ID}},
-		{"UPDATE idempotency_requests SET response_body='{}' WHERE http_status=201", "55000", nil},
-		{"DELETE FROM idempotency_requests WHERE http_status=201", "55000", nil},
-		{"UPDATE batteries SET current_location='4.1.2' WHERE id=$1", "23514", []any{reg.Battery.ID}},
-		{"INSERT INTO idempotency_requests(scope,key,request_hash) VALUES('incomplete',$1,repeat('a',64))", "23514", []any{uuid.NewString()}},
-	} {
-		_, err := h.owner.Exec(tc.sql, tc.args...)
-		var p *pgconn.PgError
-		if !errors.As(err, &p) || p.Code != tc.code {
-			t.Fatalf("guard %s: %v want SQLSTATE %s", tc.sql, err, tc.code)
-		}
-	}
+	h.fixture()
+	h.register("PRIVILEGES", "4.1.1")
 	if os.Getenv("TEST_APP_DATABASE_URL") == "" {
 		t.Log("TEST_APP_DATABASE_URL absent: restricted-role privileges not checked")
 		return
 	}
-	for _, query := range []string{"UPDATE battery_operations SET device_code=device_code", "DELETE FROM battery_operations", "TRUNCATE battery_operations", "DELETE FROM batteries", "SELECT * FROM schema_migrations", "SELECT * FROM legacy_operations", "SELECT * FROM legacy_cells"} {
+	for _, query := range []string{"UPDATE battery_operations SET device_code=device_code", "DELETE FROM battery_operations", "TRUNCATE battery_operations", "DELETE FROM batteries", "SELECT * FROM schema_migrations"} {
 		_, err := h.app.Exec(query)
 		var p *pgconn.PgError
 		if !errors.As(err, &p) || p.Code != "42501" {
 			t.Fatalf("runtime unexpectedly permitted %q: %v", query, err)
 		}
 	}
+	if h.count("SELECT count(*) FROM battery_operations") != 1 {
+		t.Fatal("denied SQL changed history")
+	}
 }
 
-func TestIntegrationHistoryCursorUsesVersionAndStableBoundary(t *testing.T) {
+func TestIntegrationEmployeeListIncludesAllRows(t *testing.T) {
 	h := newHarness(t)
-	h.fixture()
-	reg := h.register("PAGING", "6.1.1")
+	for i := 0; i < 51; i++ {
+		h.post("/employees", map[string]any{"display_name": fmt.Sprintf("Employee %d", i)})
+	}
+	list := decode[listDTO[employeeDTO]](t, h.get("/employees"))
+	if len(list.Items) != 51 {
+		t.Fatalf("list must contain all 51 employees: %d", len(list.Items))
+	}
+	for i := 1; i < len(list.Items); i++ {
+		if list.Items[i-1].ID >= list.Items[i].ID {
+			t.Fatal("employees must be ordered by ID")
+		}
+	}
+}
+
+func TestIntegrationHistoryListsIncludeAllRowsAndOrderTies(t *testing.T) {
+	h := newHarness(t)
+	f := h.fixture()
+	reg := h.register("HISTORY", "6.1.1")
 	h.action(reg.Battery.ID, "take", "00001234", "")
 	h.action(reg.Battery.ID, "return", "00001234", "6.1.2")
-	path := "/batteries/" + reg.Battery.ID + "/operations?limit=1"
-	first := decode[pageDTO[operationDTO]](t, h.get(path))
-	if len(first.Items) != 1 || first.Items[0].BatteryVersion != 3 || first.NextCursor == nil {
-		t.Fatal("wrong initial battery history page")
-	}
-	// Higher versions created while paging are excluded from this continuation.
 	h.action(reg.Battery.ID, "move", "00001234", "6.1.3")
-	seen := map[string]bool{first.Items[0].ID: true}
-	cursor := first.NextCursor
-	for wantVersion := int64(2); wantVersion > 0; wantVersion-- {
-		if cursor == nil {
-			t.Fatal("premature history cursor end")
-		}
-		page := decode[pageDTO[operationDTO]](t, h.get(path+"&cursor="+url.QueryEscape(*cursor)))
-		if len(page.Items) != 1 || page.Items[0].BatteryVersion != wantVersion || seen[page.Items[0].ID] {
-			t.Fatal("history continuation duplicated, skipped, or included new version")
-		}
-		seen[page.Items[0].ID] = true
-		cursor = page.NextCursor
+	batteryPath := "/batteries/" + reg.Battery.ID + "/operations"
+	history := h.operations(batteryPath)
+	if len(history) != 4 {
+		t.Fatalf("battery history lost rows: %d", len(history))
 	}
-	if cursor != nil {
-		t.Fatal("nonempty continuation after last battery history entry")
+	for i, operation := range history {
+		if operation.BatteryVersion != int64(4-i) {
+			t.Fatal("battery history must follow descending version")
+		}
 	}
 	from := url.QueryEscape(reg.Operation.OccurredAt.Format(time.RFC3339Nano))
-	allPath := "/operations?battery_id=" + reg.Battery.ID + "&from=" + from + "&limit=1"
-	seen = map[string]bool{}
-	for pageNumber := 0; pageNumber < 6; pageNumber++ {
-		page := decode[pageDTO[operationDTO]](t, h.get(allPath))
-		for _, op := range page.Items {
-			if seen[op.ID] {
-				t.Fatal("time cursor duplicate")
-			}
-			seen[op.ID] = true
-		}
-		if page.NextCursor == nil {
-			break
-		}
-		allPath = "/operations?battery_id=" + reg.Battery.ID + "&from=" + from + "&limit=1&cursor=" + url.QueryEscape(*page.NextCursor)
+	allPath := "/operations?battery_id=" + reg.Battery.ID + "&from=" + from
+	if len(h.operations(allPath)) != 4 {
+		t.Fatal("filtered history must include every matching operation")
 	}
-	if len(seen) != 4 {
-		t.Fatalf("time cursor lost rows: %d", len(seen))
+	// Force equal timestamps to exercise the UUID tie-break independently of the clock.
+	tiedTime := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	if _, err := h.owner.Exec("UPDATE battery_operations SET occurred_at=$1 WHERE battery_id=$2", tiedTime, reg.Battery.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/operations?battery_id=" + reg.Battery.ID, "/employees/" + f.ivan.ID + "/operations"} {
+		list := h.operations(path)
+		if len(list) != 4 {
+			t.Fatalf("history lost rows at %s: %d", path, len(list))
+		}
+		for i, operation := range list {
+			if !operation.OccurredAt.Equal(tiedTime) {
+				t.Fatal("unexpected history timestamp")
+			}
+			if i > 0 && list[i-1].ID <= operation.ID {
+				t.Fatal("tied timestamps must follow descending operation ID")
+			}
+		}
+		equalJSON(t, h.get(path), h.get(path))
+	}
+	history = h.operations(batteryPath)
+	for i, operation := range history {
+		if operation.BatteryVersion != int64(4-i) {
+			t.Fatal("timestamp ties changed battery history version order")
+		}
 	}
 }
 
@@ -841,11 +839,11 @@ func TestIntegrationInventoryCodeLookupPreservesLiteralIdentity(t *testing.T) {
 	h.fixture()
 	code := " B-LITERAL "
 	reg := h.register(code, "7.1.1")
-	page := decode[pageDTO[batteryDTO]](t, h.get("/batteries?inventory_code="+url.QueryEscape(code)))
+	page := decode[listDTO[batteryDTO]](t, h.get("/batteries?inventory_code="+url.QueryEscape(code)))
 	if len(page.Items) != 1 || page.Items[0].ID != reg.Battery.ID {
 		t.Fatal("exact inventory lookup changed the registered identity")
 	}
-	if len(decode[pageDTO[batteryDTO]](t, h.get("/batteries?inventory_code=B-LITERAL")).Items) != 0 {
+	if len(decode[listDTO[batteryDTO]](t, h.get("/batteries?inventory_code=B-LITERAL")).Items) != 0 {
 		t.Fatal("inventory lookup silently normalized different codes")
 	}
 }

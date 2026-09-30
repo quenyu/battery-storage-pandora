@@ -54,9 +54,4 @@ type CredentialResolution struct {
 	CredentialID string   `json:"credential_id"`
 }
 
-type ListOptions struct {
-	Limit  int
-	Values map[string]string
-	Scope  string
-	Cursor *Cursor
-}
+type Filters map[string]string

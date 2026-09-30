@@ -94,6 +94,15 @@ func TestOpenAPIContractAndExamples(t *testing.T) {
 	if len(c.doc.Paths.Map()) != 15 || len(c.doc.Components.Schemas) != 20 {
 		t.Fatalf("unexpected contract shape: %d paths %d schemas", len(c.doc.Paths.Map()), len(c.doc.Components.Schemas))
 	}
+	for _, name := range []string{"BatteryList", "CredentialList", "EmployeeList", "OperationList"} {
+		schema := c.doc.Components.Schemas[name]
+		if schema == nil || len(schema.Value.Properties) != 1 || schema.Value.Properties["items"] == nil {
+			t.Fatalf("%s must contain only items", name)
+		}
+		if len(schema.Value.Required) != 1 || schema.Value.Required[0] != "items" {
+			t.Fatalf("%s must require items", name)
+		}
+	}
 	seen := map[string]bool{}
 	operations, commands, examples := 0, 0, 0
 	checkContent := func(label string, content openapi3.Content) {
@@ -134,6 +143,11 @@ func TestOpenAPIContractAndExamples(t *testing.T) {
 	for path, item := range c.doc.Paths.Map() {
 		for method, op := range item.Operations() {
 			operations++
+			for _, parameter := range op.Parameters {
+				if parameter.Value.In == "query" && (parameter.Value.Name == "limit" || parameter.Value.Name == "cursor") {
+					t.Errorf("%s %s declares removed pagination parameter %s", method, path, parameter.Value.Name)
+				}
+			}
 			if op.OperationID == "" || seen[op.OperationID] {
 				t.Errorf("missing/duplicate operationId at %s %s", method, path)
 			}

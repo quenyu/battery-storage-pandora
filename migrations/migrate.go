@@ -46,9 +46,7 @@ func Up(ctx context.Context, db *sql.DB) error {
 		if err != sql.ErrNoRows {
 			return err
 		}
-		// The design DDL includes transaction markers; this runner owns the transaction.
-		statement := strings.ReplaceAll(strings.ReplaceAll(string(body), "BEGIN;", ""), "COMMIT;", "")
-		if _, err = tx.ExecContext(ctx, statement); err != nil {
+		if _, err = tx.ExecContext(ctx, string(body)); err != nil {
 			return fmt.Errorf("migration %s: %w", entry.Name(), err)
 		}
 		if _, err = tx.ExecContext(ctx, `INSERT INTO schema_migrations(version,checksum) VALUES ($1,$2)`, entry.Name(), sum); err != nil {

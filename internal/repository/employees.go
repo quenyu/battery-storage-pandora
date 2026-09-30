@@ -6,12 +6,24 @@ import (
 	"time"
 )
 
-func (r *Repository) GetEmployee(ctx context.Context, id string) (model.Employee, error) {
-	return getEmployee(ctx, r.db, id)
+func (r *Repository) GetEmployeeByID(ctx context.Context, id string) (model.Employee, error) {
+	query := employeeSelect + ` WHERE e.id = $1`
+	var employee model.Employee
+	err := r.db.QueryRowContext(ctx, query, id).Scan(
+		&employee.ID, &employee.PersonnelNumber, &employee.DisplayName,
+		&employee.CreatedAt, &employee.UpdatedAt, &employee.DisabledAt,
+	)
+	employee.CreatedAt, employee.UpdatedAt = employee.CreatedAt.UTC(), employee.UpdatedAt.UTC()
+	employee.IsActive = employee.DisabledAt == nil
+	if employee.DisabledAt != nil {
+		disabledAt := employee.DisabledAt.UTC()
+		employee.DisabledAt = &disabledAt
+	}
+	return employee, err
 }
 
 func (tx *Tx) GetEmployee(ctx context.Context, id string) (model.Employee, error) {
-	return getEmployee(ctx, tx.tx, id)
+	return scanEmployee(tx.tx.QueryRowContext(ctx, employeeSelect+` WHERE e.id = $1`, id))
 }
 
 func (tx *Tx) LockEmployee(ctx context.Context, id string) (model.Employee, error) {

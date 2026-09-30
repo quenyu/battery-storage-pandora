@@ -5,8 +5,19 @@ import (
 	"context"
 )
 
-func (r *Repository) GetOperation(ctx context.Context, id string) (model.Operation, error) {
-	return getOperation(ctx, r.db, id)
+func (r *Repository) GetOperationByID(ctx context.Context, id string) (model.Operation, error) {
+	query := operationSelect + ` WHERE o.id = $1`
+	var operation model.Operation
+	err := r.db.QueryRowContext(ctx, query, id).Scan(
+		&operation.ID, &operation.BatteryID, &operation.BatteryVersion, &operation.Type,
+		&operation.ActorEmployeeID, &operation.CredentialID,
+		&operation.SourceStatus, &operation.DestinationStatus,
+		&operation.SourceLocation, &operation.DestinationLocation,
+		&operation.SourceHolderEmployeeID, &operation.DestinationHolderEmployeeID,
+		&operation.DeviceCode, &operation.OccurredAt,
+	)
+	operation.OccurredAt = operation.OccurredAt.UTC()
+	return operation, err
 }
 
 func (tx *Tx) RecordOperation(ctx context.Context, operation *model.Operation, requestKey string) error {

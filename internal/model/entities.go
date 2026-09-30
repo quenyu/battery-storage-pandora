@@ -56,7 +56,6 @@ type CommandResult struct {
 	Operation Operation `json:"operation"`
 }
 
-type Page struct {
-	Items      any     `json:"items"`
-	NextCursor *string `json:"next_cursor"`
+type ListResult struct {
+	Items any `json:"items"`
 }

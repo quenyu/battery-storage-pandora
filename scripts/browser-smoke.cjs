@@ -62,6 +62,18 @@ async function main() {
 
     const documented = await page.evaluate(() => {
       const spec = window.ui.specSelectors.specJson().toJS();
+      for (const item of Object.values(spec.paths)) {
+        for (const operation of Object.values(item).filter(value => value.operationId)) {
+          if ((operation.parameters || []).some(parameter => ['limit', 'cursor'].includes(parameter.name))) {
+            throw new Error('Swagger contains a removed pagination parameter');
+          }
+        }
+      }
+      for (const name of ['EmployeeList', 'CredentialList', 'BatteryList', 'OperationList']) {
+        if (Object.keys(spec.components.schemas[name].properties).join(',') !== 'items') {
+          throw new Error(name + ' must expose only items');
+        }
+      }
       return Object.values(spec.paths).flatMap(item => Object.values(item)
         .filter(operation => operation.operationId)
         .map(operation => ({ id: operation.operationId, responses: Object.keys(operation.responses) })));
@@ -129,6 +141,18 @@ async function main() {
     assert.equal(readResponse.status(), 200);
     assert.deepEqual(await readResponse.json(), first);
     evidence.checks.push('Try it out GET employee returns persisted record');
+
+    const list = page.locator('.opblock[id$="-listEmployees"]');
+    await list.locator('.opblock-summary-control').click();
+    await list.getByRole('button', { name: 'Try it out', exact: true }).click();
+    const pendingList = page.waitForResponse(response => response.url() === base + '/api/employees' && response.request().method() === 'GET');
+    await list.getByRole('button', { name: 'Execute', exact: true }).click();
+    const listResponse = await pendingList;
+    assert.equal(listResponse.status(), 200);
+    const employees = await listResponse.json();
+    assert.deepEqual(Object.keys(employees), ['items']);
+    assert.ok(employees.items.some(employee => employee.id === first.id));
+    evidence.checks.push('Try it out lists employees as items without pagination parameters or continuation fields');
 
     const credentialValue = 'browser-card-' + randomUUID();
     const card = page.locator('.opblock[id$="-createCredential"]');

@@ -33,19 +33,19 @@ func (s *Server) getEmployee(ctx context.Context, r *http.Request) (any, error) 
 	if err := noQuery(r); err != nil {
 		return nil, err
 	}
-	return s.service.GetEmployee(ctx, r.PathValue("employee_id"))
+	return s.service.GetEmployeeByID(ctx, r.PathValue("employee_id"))
 }
 
 func (s *Server) getBattery(ctx context.Context, r *http.Request) (any, error) {
 	if err := noQuery(r); err != nil {
 		return nil, err
 	}
-	return s.service.GetBattery(ctx, r.PathValue("battery_id"))
+	return s.service.GetBatteryByID(ctx, r.PathValue("battery_id"))
 }
 
 func (s *Server) getOperation(ctx context.Context, r *http.Request) (any, error) {
 	if err := noQuery(r); err != nil {
 		return nil, err
 	}
-	return s.service.GetOperation(ctx, r.PathValue("operation_id"))
+	return s.service.GetOperationByID(ctx, r.PathValue("operation_id"))
 }
