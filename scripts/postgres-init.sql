@@ -11,3 +11,7 @@ REVOKE ALL ON DATABASE pandora FROM PUBLIC;
 REVOKE ALL ON DATABASE pandora_test FROM PUBLIC;
 GRANT CONNECT ON DATABASE pandora, pandora_test TO pandora_app;
 
+SELECT 'CREATE DATABASE pandora_mvp_demo OWNER pandora_owner'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'pandora_mvp_demo') \gexec
+REVOKE ALL ON DATABASE pandora_mvp_demo FROM PUBLIC;
+GRANT CONNECT ON DATABASE pandora_mvp_demo TO pandora_app;

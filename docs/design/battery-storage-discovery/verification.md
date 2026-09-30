@@ -1,3 +1,30 @@
+# Проверка реализованного MVP — 30.09.2026
+
+Реализация: ветка `feature/text-location-mvp`, исходная демонстрация сохранена коммитом `a49c668` на `main`. Формат адреса подтверждён пользователем: три положительных числа без ведущих нулей. Рабочая `pandora` не мигрировалась и не очищалась; до/после разработки counts employees/batteries/operations/requests равны 5/0/0/5.
+
+## Выполнено
+
+- `go test ./... -count=1` с TEST_DATABASE_URL=pandora_test и TEST_APP_DATABASE_URL ограниченной роли pandora_app: PASS. Тесты создают и очищают только свои случайные схемы в отдельной `_test` БД.
+- Все 19 успешных API операций проверены kin-openapi; 20 schemas и 187 examples валидны. JSON DTO/ошибки соответствуют встроенному discovery OpenAPI.
+- Две независимые PostgreSQL sessions: concurrent TAKE (один201), STORE разных АКБ в один адрес (один201), одинаковый inventory_code (один201), MOVE разных АКБ в один адрес (один201), общий idempotency key (один эффект).
+- Чужой RETURN403; expected_version/source conflicts409; disabled actor/card403; несколько карт, замена карты и RETURN новой картой того же holder сохраняют old credential/history.
+- Потеря TCP ответа после COMMIT: исходный key возвращает cached result; повтор TAKE после RETURN не создаёт новый event; cached409 остаётся409 после освобождения адреса; keys связаны с stable principal, token rotation не меняет scope.
+- Fault injection после current/event и перед result: изменения полностью откатываются, key можно безопасно повторить. Guard-тесты: append-only, стабильная identity, deferred current/history/version/result, runtime права без DELETE/TRUNCATE/архивного доступа.
+- Forward migration002 на отдельной тестовой БД переносит существующие ID, карты, addresses обоих концов, timestamps, версии и custody. Исходные8 таблиц/все строки сохраняются как immutable legacy_*. Несовместимые LOSS/чужой RETURN/разрыв history/projection вызывают атомарный отказ.
+- Фильтры обоих holders/addresses/device/time, keyset cursors endpoint/filter binding, порядок versions и временная верхняя граница, malformed запросы/ключи/карты. Ревью выявило literal inventory_code lookup mismatch; исправлено и покрыто PostgreSQL регрессией.
+- Browser Chrome smoke PASS на127.0.0.1:18080: локальные assets,19 карточек20schemas, все описанные ответы/examples, Authorize, Try it out create201/replay201/read200/credential201/STORE201, zero page errors, все запросы same-origin. Отдельно Browser plugin подтвердил фактическое создание тестового сотрудника201.
+- PowerShell demo PASS: STORE→TAKE→replacement→RETURN→MOVE→replay, ровно4 операции, тот же employee.
+
+Evidence локально (не Git): `.local/api-integration-test.log`, `.local/browser-smoke-mvp.log`, `.local/browser-evidence-mvp/results.json` и screenshots. Команды повторения и запуск описаны в корневом README.
+
+## Ограничения проверки
+
+`go test -race` не выполнен: в Windows-среде CGO отключён и C-компилятора нет. Docker-команды документированы, Docker здесь не запускался (проверен portable PostgreSQL17.11). Корпоративный кадровый источник/вход/реальная policy, backup/restore и production SLO не подтверждены. Тестовый Bearer adapter — явно включаемый локальный режим. Рабочая БД не преобразовывалась.
+
+---
+
+Ниже историческая проверка проекта до реализации Go:
+
 # Проверка проектирования v2
 
 Обновлено 30.09.2026 после решения руководителя о текстовых адресах без таблиц мест. Готово для обсуждения API; готово частично для реализации: Q02–05/Q19/Q25/Q29 и канонизация Q30 требуют ответов. Новый backend не реализован, HTTP проверки ниже запланированы. Существующая демонстрация имеет другой контракт и не подтверждает эту версию.
