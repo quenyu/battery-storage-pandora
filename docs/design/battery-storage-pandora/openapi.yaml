@@ -10,8 +10,8 @@ info:
     UI доступен по /swagger/; контракт: /openapi.yaml. UI использует этот файл как единый источник
     и поддерживает Try it out с Idempotency-Key.'
 servers:
-- url: /api/v1
-  description: Бизнес-API на том же origin, что и Swagger UI; локально http://127.0.0.1:8080/api/v1
+- url: /api
+  description: Бизнес-API на том же origin, что и Swagger UI; локально http://127.0.0.1:8080/api
 tags:
 - name: Сотрудники
 - name: Хранение

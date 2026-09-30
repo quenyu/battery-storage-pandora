@@ -1,70 +1,58 @@
-# Pandora — Go backend учёта АКБ
+# Pandora — учёт АКБ
 
-Проверяемый локальный MVP: Go, PostgreSQL, pgx через database/sql, явный SQL и REST. Актуальный контракт встроен из `docs/design/battery-storage-discovery/openapi.yaml`. Локальные assets Swagger UI включены в бинарник; доступ в интернет для Try it out не нужен.
+Учебный backend на Go и PostgreSQL. SQL выполняется через pgx, без ORM.
 
-Сотрудники и несколько карт — отдельные сущности. Регистрация АКБ создаёт STORE/v1; далее TAKE, RETURN только держателем и MOVE. Адрес — текст `шкаф.полка.ячейка`: три положительных числа без ведущих нулей. Число шкафов/полок/ячеек не ограничивается выдуманными значениями. Адреса в журнале — снимки; current_location — проекция. Частичный UNIQUE допускает одну АКБ на адрес.
+## Запуск
 
-## Быстрый запуск Windows
-
-Нужны Go >=1.24 и Git. Portable PostgreSQL уже может быть в `.local/pgsql`; скрипт установки при отсутствии скачивает закреплённый официальный архив. Docker — альтернативный вариант ниже.
+Из корня проекта:
 
 ```powershell
-# Из корня репозитория; новая отдельная demo БД, старую pandora не мигрирует.
-./scripts/run-local.ps1 -HttpAddress 127.0.0.1:18080
+./scripts/run-local.ps1
 ```
 
-Откройте http://127.0.0.1:18080/swagger/. Нажмите Authorize и введите `local-mvp-test-token` (без слова Bearer). Каждая изменяющая команда требует нового UUID Idempotency-Key; при timeout повторяйте тот же ключ и тело. `POST /credential-resolutions` — чтение без ключа.
+Скрипт запускает PostgreSQL, применяет миграции в `pandora_storage` и запускает сервер. Swagger: http://127.0.0.1:18080/swagger/. Запросы доступны без авторизации.
 
-В другом PowerShell можно создать тестового сотрудника, карты и АКБ и проверить STORE→TAKE→смена карты→RETURN→MOVE→replay:
+Тестовые сотрудники, карты и АКБ:
 
 ```powershell
-./scripts/demo.ps1 -Base http://127.0.0.1:18080/api/v1 -Token local-mvp-test-token
+./scripts/demo.ps1
 ```
 
-Скрипт добавляет данные, не очищает БД. Коды/адреса каждого запуска отдельные. Ctrl+C останавливает API; PostgreSQL можно остановить `./scripts/postgres-stop.ps1`.
+Скрипт добавляет данные и проверяет регистрацию, выдачу, смену карты, возврат, перемещение и повтор запроса. Ctrl+C останавливает сервер.
 
-## Ручной запуск / Docker
+## Что делает система
 
-`.env.example` описывает переменные; приложение само файл .env не читает. `DEV_MODE=true` и явно заданный `DEV_API_TOKEN` включают локальный адаптер доступа. Карта сотрудника определяет actor, token — API principal; значение token не записывается в БД. При смене token сохраняется scope `local-mvp`, поэтому replay остаётся доступным. Без настроенного адаптера запуск сервера отклоняется. Корпоративный issuer, реальные роли и кадровый источник не придуманы.
+- Хранит сотрудников и их карты отдельно. У сотрудника может быть несколько карт.
+- Регистрирует АКБ с размещением на адресе — STORE.
+- Выдаёт АКБ сотруднику — TAKE.
+- Принимает возврат только от сотрудника, который её взял — RETURN. Смена карты не меняет держателя.
+- Перемещает АКБ между адресами — MOVE.
+- Показывает текущее состояние, содержимое адреса, выданные сотруднику АКБ и историю операций.
+
+Адрес записывается текстом: `1.2.3` — шкаф, полка, ячейка. Три положительных числа без ведущих нулей. По одному адресу может находиться только одна АКБ; отдельных таблиц мест нет.
+
+Маршруты находятся под `/api`. Каждой изменяющей команде нужен UUID в заголовке `Idempotency-Key`. При повторе отправляйте прежний ключ и тело: сервер вернёт исходный результат. Новая команда — новый ключ. Поиск по карте (`POST /api/credential-resolutions`) не изменяет данные и ключа не требует.
+
+Текущее состояние АКБ, операция и результат запроса сохраняются одной транзакцией. История не редактируется. Блокировка строки АКБ и уникальный адрес защищают от двойной выдачи и одновременного занятия места.
+
+## Ручной запуск
+
+Приложение использует только `DATABASE_URL` и необязательный `HTTP_ADDR`. Файл `.env` автоматически не читается.
 
 ```powershell
-docker compose up -d
-$env:DATABASE_URL='postgres://pandora_owner@127.0.0.1:55432/pandora_mvp_demo?sslmode=disable'
+$env:DATABASE_URL='postgres://pandora_owner@127.0.0.1:55432/pandora_storage?sslmode=disable'
 go run ./cmd/pandora migrate
-docker compose exec -T -u postgres postgres psql -U pandora_owner -d pandora_mvp_demo -v ON_ERROR_STOP=1 -f /opt/pandora/postgres-grants.sql
-$env:DATABASE_URL='postgres://pandora_app@127.0.0.1:55432/pandora_mvp_demo?sslmode=disable'
-$env:DEV_MODE='true'
-$env:DEV_API_TOKEN='local-mvp-test-token'
+./scripts/postgres-grant.ps1
+$env:DATABASE_URL='postgres://pandora_app@127.0.0.1:55432/pandora_storage?sslmode=disable'
 $env:HTTP_ADDR='127.0.0.1:18080'
-go run ./cmd/pandora serve
+go run ./cmd/pandora
 ```
 
-При существующем Docker volume init script автоматически повторно не выполняется: выполните `postgres-init.sql` отдельно или создайте demo/test БД с указанными owner/grants. Не удаляйте volume с данными. Docker и portable cluster используют один порт — выбирайте один вариант. Предоставленный кластер с trust authentication предназначен для локальных тестов на loopback.
+Для PostgreSQL можно использовать `docker compose up -d` вместо portable PostgreSQL. Порт один — одновременно запускайте один вариант. В Docker права после миграций выдаются так:
 
-## Перенос старой демонстрации
-
-`001_initial.sql` сохранён без изменений. `002_text_locations.sql` выполняется атомарно вместе с записью checksum и под migration lock. Старый сервер надо остановить перед согласованным переходом.
-
-Все восемь старых таблиц и их строки сохраняются как неизменяемые `legacy_*` в той же схеме. Новый runtime не читает таблицы мест; ему доступны только пять новых таблиц. Сотрудники/карты/АКБ/операции переносятся с прежними ID, временем и версиями. Адреса JOIN cabinets→shelves→cells равны прежнему API `cabinet.number.shelf.number.cell.number`; это проверено на отдельной тестовой БД. Runtime получает SELECT/INSERT истории, без UPDATE/DELETE/TRUNCATE и без доступа к архиву.
-
-Если старые данные содержат LOSS/LOST, чужой RETURN, разрыв истории или несовпадение текущей проекции, миграция полностью откатывается и сообщает причину. Эти события нельзя молча переписать под новые правила. Требуется отдельное бизнес-решение о переносе несовместимых данных. Нужна резервная копия и проверка на копии БД перед рабочим переходом; рабочая `pandora` в этой разработке не менялась.
-
-Старые глобальные строковые idempotency keys и JSON остаются в `legacy_idempotency_records`. Новый API имеет другие пути/DTO и scope+UUID; старые ответы не выдаются за новый контракт. Для импортированных событий создаются служебные записи scope `legacy-migration`, которые не поддерживают клиентский replay старого API.
-
-## API и транзакции
-
-19 операций под `/api/v1`, описанных в Swagger:
-
-- сотрудники, изменение имени/активности, несколько credentials, замена конкретной карты, отключение и resolution;
-- АКБ: регистрация+STORE, TAKE/RETURN/MOVE, текущая проекция, точный поиск по коду, статусу, holder и location;
-- custody сотрудника; история АКБ по version DESC; история сотрудника по actor/обоим holders; общий журнал по обоим адресам, устройству, типу и интервалу времени;
-- списки `{items,next_cursor}`: limit 50 по умолчанию, максимум 200; keyset cursor связан с endpoint и фильтрами. История имеет верхнюю границу; текущие списки не обещают frozen snapshot.
-
-Одна транзакция: reservation(scope,key) → SAVEPOINT → employee/credential FOR SHARE → battery FOR UPDATE → current/event → первоначальный HTTP result → COMMIT. UNIQUE адреса разрешает гонки разных АКБ. Конфликты 404/409/422, полученные внутри бизнес-транзакции, сохраняются после rollback к savepoint; malformed/auth/500/503 не сохраняются. Ошибки валидации до BEGIN не резервируют ключ. Replay возвращает исходный status/body даже после следующих движений. При переиспользовании ключа для другого метода/пути/тела — 409 IDEMPOTENCY_KEY_REUSED.
-
-JSON-порядок и регистр UUID не меняют hash. Идентификаторы строковые, leading zero карты/кода сохраняются. Source берётся из БД, observed_source только сверяется; expected_version необязателен. Ошибки имеют единый envelope `error {code,message,details,request_id}`; SQL и credentials не раскрываются. X-Request-ID отмечает конкретный HTTP вызов, cached body сохраняет первоначальный request_id. Логи содержат route/status/duration/replay, без тела, query и token.
-
-DB guards запрещают изменение истории и identity, неполный результат и COMMIT с нарушением цепочки/projection. Владелец БД/суперпользователь остаётся границей доверия. Таймауты lock=5s, statement=10s, request=15s — технические настройки локального MVP, не заявленные SLO. Deadlock/timeout возвращает503; клиент повторяет прежний ключ.
+```powershell
+docker compose exec -T -u postgres postgres psql -U pandora_owner -d pandora_storage -v ON_ERROR_STOP=1 -f /opt/pandora/postgres-grants.sql
+```
 
 ## Проверки
 
@@ -76,22 +64,17 @@ go vet ./...
 go build ./cmd/pandora
 ```
 
-Тесты требуют БД с именем `_test`, создают отдельные случайные схемы и удаляют только свои схемы. Без TEST_DATABASE_URL PostgreSQL-тесты явно skipped. Тестовый runtime — ограниченная роль; owner применяется только для setup и fault injection.
+Тесты используют отдельные схемы в `pandora_test`. Без `TEST_DATABASE_URL` интеграционные тесты пропускаются. Проверяются конкурирующие выдачи и размещения, чужой возврат, повтор после потерянного ответа, полный откат при сбое, смена карты и перенос старых данных.
 
-Проверяются все19 успешных ответов против OpenAPI и187 examples; два TAKE (один успех), две АКБ на адрес (один успех), конкурирующие MOVE, чужой RETURN, повтор после обрыва TCP после COMMIT, concurrent key, replay после RETURN и saved409, rollback после записи event/current перед result, смена карты и custody, отзыв карты/сотрудника, подмена source/version, диапазоны и cursors, immutable guards и runtime grants, перенос истории/адресов и отказ несовместимых данных. Проверка Go race требует CGO и C-компилятора; в предоставленной Windows-среде они отсутствуют.
-
-Опциональная автоматическая проверка браузера использует уже установленный Playwright:
+Проверка Swagger в браузере при установленном Playwright:
 
 ```powershell
 $env:BASE_URL='http://127.0.0.1:18080'
-$env:DEV_API_TOKEN='local-mvp-test-token'
 node scripts/browser-smoke.cjs
 ```
 
-Скрипт проверяет локальный ресурсный набор, Authorize,19 карточек,20 schemas, Try it out,201/replay/чтение и STORE; доказательства в `.local/browser-evidence`. Не требуется frontend build.
+## Миграции
 
-## Осталось согласовать
+Применённые миграции не изменяются. Переход со старой модели сохраняет исходные таблицы и данные в `legacy_*`, переносит адреса и историю. При LOSS, чужом возврате или нарушенной истории переход останавливается без изменения данных.
 
-Кадровый источник, реальные маркировки и corporate authentication/authorization, повторное назначение исторической карты другому человеку, отдельная регистрация без STORE, retention и backup/restore/RPO/RTO. Пока историческую карту нельзя назначать другому сотруднику; сотрудник с custody не отключается. Это ограниченные правила MVP из design package.
-
-ТСД приложение, оборудование/offline, физическое существование/закрытие адреса, sensors/замки, LOSS/TRANSFER и производственная эксплуатация вне этого MVP.
+Старая БД `pandora` не используется скриптом запуска и не очищается. Клиент ТСД, оборудование и offline в эту задачу не входят.
