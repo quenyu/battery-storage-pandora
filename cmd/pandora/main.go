@@ -1,8 +1,11 @@
 package main
 
 import (
-	"battery-storage-pandora/internal/api"
+	"battery-storage-pandora/internal/config"
 	"battery-storage-pandora/internal/database"
+	"battery-storage-pandora/internal/handler"
+	"battery-storage-pandora/internal/repository"
+	"battery-storage-pandora/internal/service"
 	"battery-storage-pandora/migrations"
 	"context"
 	"errors"
@@ -29,12 +32,12 @@ func run() error {
 	if mode != "serve" && mode != "migrate" {
 		return fmt.Errorf("usage: pandora [serve|migrate]")
 	}
-	url := os.Getenv("DATABASE_URL")
-	if url == "" {
-		return fmt.Errorf("DATABASE_URL is required; see .env.example")
+	cfg, err := config.Load()
+	if err != nil {
+		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	db, err := database.Open(ctx, url)
+	db, err := database.Open(ctx, cfg.DatabaseURL)
 	cancel()
 	if err != nil {
 		return err
@@ -49,13 +52,10 @@ func run() error {
 		slog.Info("migrations applied")
 		return nil
 	}
-	addr := os.Getenv("HTTP_ADDR")
-	if addr == "" {
-		addr = "127.0.0.1:8080"
-	}
+	addr := cfg.HTTPAddress
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           api.New(db),
+		Handler:           handler.New(service.New(repository.New(db))),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      20 * time.Second,

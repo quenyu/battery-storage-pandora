@@ -8,8 +8,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-
-	assets "battery-storage-pandora"
 )
 
 func TestBundledUIResourceClosure(t *testing.T) {
@@ -61,14 +59,14 @@ func TestBundledUIResourceClosure(t *testing.T) {
 }
 
 func TestEmbeddedContractIsAuthoritativeSource(t *testing.T) {
-	source, err := os.ReadFile("../docs/design/battery-storage-discovery/openapi.yaml")
+	source, err := os.ReadFile("openapi.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(source, assets.OpenAPI) {
+	if !bytes.Equal(source, OpenAPI) {
 		t.Fatal("embedded contract differs from authoritative design source")
 	}
-	if !bytes.Contains(assets.OpenAPI, []byte(`url: /api`)) {
+	if !bytes.Contains(OpenAPI, []byte(`url: /api`)) {
 		t.Fatal("Try it out must use the same-origin API")
 	}
 }

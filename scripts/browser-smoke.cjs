@@ -49,7 +49,7 @@ async function main() {
     assert.equal((await redirected.response()).status(), 308);
     const contract = await contractResponse;
     assert.equal(contract.status(), 200);
-    assert.deepEqual(await contract.body(), await fs.readFile(path.join(__dirname, '../docs/design/battery-storage-discovery/openapi.yaml')));
+    assert.deepEqual(await contract.body(), await fs.readFile(path.join(__dirname, '../swagger/openapi.yaml')));
     await page.locator('.opblock').nth(18).waitFor();
     assert.equal(await page.locator('.opblock').count(), 19);
     assert.equal(await page.locator('.model-container').count(), 20);

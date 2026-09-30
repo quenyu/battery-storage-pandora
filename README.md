@@ -2,6 +2,24 @@
 
 Учебный backend на Go и PostgreSQL. SQL выполняется через pgx, без ORM.
 
+## Структура проекта
+
+```text
+cmd/pandora/         запуск сервера и миграций
+internal/
+  config/            настройки DATABASE_URL и HTTP_ADDR
+  database/          подключение к PostgreSQL
+  model/             сущности, параметры команд и общие типы
+  handler/           HTTP-маршруты, JSON, проверка запросов и ответы
+  service/           правила учёта АКБ и выполнение команд в транзакции
+  repository/        SQL, блокировки, чтение и запись данных
+migrations/          миграции базы данных
+swagger/             OpenAPI и локальный Swagger UI
+scripts/             запуск и проверка на тестовых данных
+```
+
+Обработчики вызывают сервисы, сервисы используют репозитории. SQL находится в `repository`. Контракт API — `swagger/openapi.yaml`. Папка `docs` хранится только локально и исключена из Git.
+
 ## Запуск
 
 Из корня проекта:
