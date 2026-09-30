@@ -38,11 +38,17 @@ func newContractChecker(t *testing.T) *contractChecker {
 }
 func (c *contractChecker) validate(t *testing.T, res response) {
 	t.Helper()
-	route, params, err := c.router.FindRoute(res.request)
+	// The authoritative server is same-origin /api/v1. kin-openapi's legacy
+	// router matches relative server URLs against relative request URLs.
+	request := res.request.Clone(context.Background())
+	requestURL := *request.URL
+	requestURL.Scheme, requestURL.Host = "", ""
+	request.URL = &requestURL
+	route, params, err := c.router.FindRoute(request)
 	if err != nil {
 		t.Fatalf("request not present in OpenAPI: %s %s: %v", res.request.Method, res.request.URL, err)
 	}
-	input := &openapi3filter.ResponseValidationInput{RequestValidationInput: &openapi3filter.RequestValidationInput{Request: res.request, PathParams: params, Route: route}, Status: res.status, Header: res.header, Options: &openapi3filter.Options{IncludeResponseStatus: true}}
+	input := &openapi3filter.ResponseValidationInput{RequestValidationInput: &openapi3filter.RequestValidationInput{Request: request, PathParams: params, Route: route}, Status: res.status, Header: res.header, Options: &openapi3filter.Options{IncludeResponseStatus: true}}
 	input.SetBodyBytes(res.body)
 	if err := openapi3filter.ValidateResponse(context.Background(), input); err != nil {
 		t.Fatalf("OpenAPI response violation for %s %s [%d]: %v\n%s", res.request.Method, res.request.URL.Path, res.status, err, res.body)
@@ -69,7 +75,7 @@ func (c *contractChecker) assertAllOperations(t *testing.T) {
 
 func TestOpenAPIContractAndExamples(t *testing.T) {
 	c := newContractChecker(t)
-	source, err := os.ReadFile("../../docs/design/battery-storage-pandora/openapi.yaml")
+	source, err := os.ReadFile("../../docs/design/battery-storage-discovery/openapi.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +85,7 @@ func TestOpenAPIContractAndExamples(t *testing.T) {
 	if len(c.doc.Servers) != 1 || c.doc.Servers[0].URL != "/api/v1" {
 		t.Fatal("Swagger requests must use same-origin /api/v1")
 	}
-	if len(c.doc.Paths.Map()) != 14 || len(c.doc.Components.Schemas) != 23 {
+	if len(c.doc.Paths.Map()) != 15 || len(c.doc.Components.Schemas) != 20 {
 		t.Fatalf("unexpected contract shape: %d paths %d schemas", len(c.doc.Paths.Map()), len(c.doc.Components.Schemas))
 	}
 	seen := map[string]bool{}
@@ -120,7 +126,7 @@ func TestOpenAPIContractAndExamples(t *testing.T) {
 				t.Errorf("missing/duplicate operationId at %s %s", method, path)
 			}
 			seen[op.OperationID] = true
-			if method == "POST" || method == "PUT" {
+			if (method == "POST" || method == "PATCH") && op.OperationID != "resolveCredential" {
 				commands++
 				hasKey := false
 				for _, p := range op.Parameters {
@@ -140,11 +146,11 @@ func TestOpenAPIContractAndExamples(t *testing.T) {
 			}
 		}
 	}
-	if operations != 19 || commands != 10 {
-		t.Fatalf("got %d operations / %d commands; want 19 / 10", operations, commands)
+	if operations != 19 || commands != 8 {
+		t.Fatalf("got %d operations / %d commands; want 19 / 8", operations, commands)
 	}
-	if examples < 36 {
-		t.Errorf("only %d examples checked; expected at least 36", examples)
+	if examples < 180 {
+		t.Errorf("only %d examples checked; expected at least 180", examples)
 	}
 	t.Logf("OpenAPI valid: %d paths, %d operations, %d schemas, %d example occurrences checked", len(c.doc.Paths.Map()), operations, len(c.doc.Components.Schemas), examples)
 }

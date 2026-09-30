@@ -53,7 +53,13 @@ func run() error {
 	if addr == "" {
 		addr = "127.0.0.1:8080"
 	}
-	server := &http.Server{Addr: addr, Handler: api.New(db), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second}
+	// Corporate identity/policy is deliberately not guessed. This adapter is
+	// enabled explicitly for the local MVP; a card still identifies the actor.
+	if os.Getenv("DEV_MODE") != "true" || os.Getenv("DEV_API_TOKEN") == "" {
+		return fmt.Errorf("local MVP requires DEV_MODE=true and DEV_API_TOKEN; enterprise authentication is not configured")
+	}
+	auth := api.StaticTokens(map[string]api.Principal{os.Getenv("DEV_API_TOKEN"): {Scope: "local-mvp", Read: true, Manage: true, Command: true}})
+	server := &http.Server{Addr: addr, Handler: api.NewWithAuth(db, auth), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second}
 	stop, stopSignal := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignal()
 	finished := make(chan error, 1)

@@ -90,7 +90,7 @@ func newHarness(t *testing.T) *harness {
 		}
 		appcfg.RuntimeParams["search_path"] = schema
 		role := pgx.Identifier{appcfg.User}.Sanitize()
-		if _, err := owner.Exec("GRANT USAGE ON SCHEMA " + quoted + " TO " + role + "; GRANT SELECT, INSERT, UPDATE ON employees,employee_credentials,cabinets,shelves,cells,batteries,idempotency_records TO " + role + "; GRANT SELECT,INSERT ON operations TO " + role); err != nil {
+		if _, err := owner.Exec("GRANT USAGE ON SCHEMA " + quoted + " TO " + role + "; GRANT SELECT, INSERT, UPDATE ON employees,employee_credentials,batteries,idempotency_requests TO " + role + "; GRANT SELECT,INSERT ON battery_operations TO " + role); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -100,12 +100,15 @@ func newHarness(t *testing.T) *harness {
 	if err := app.Ping(); err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(api.New(app))
+	srv := httptest.NewServer(testAPI(app))
 	t.Cleanup(srv.Close)
 	return &harness{t: t, owner: owner, app: app, config: appcfg, server: srv, contract: newContractChecker(t)}
 }
 
 func perform(client *http.Client, base, method, path, body, key, contentType string) (response, error) {
+	return performToken(client, base, method, path, body, key, contentType, "test-token")
+}
+func performToken(client *http.Client, base, method, path, body, key, contentType, token string) (response, error) {
 	req, err := http.NewRequest(method, base+"/api/v1"+path, strings.NewReader(body))
 	if err != nil {
 		return response{}, err
@@ -116,6 +119,7 @@ func perform(client *http.Client, base, method, path, body, key, contentType str
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
+	req.Header.Set("Authorization", "Bearer "+token)
 	res, err := client.Do(req)
 	if err != nil {
 		return response{}, err
@@ -181,7 +185,7 @@ func equalJSON(t *testing.T, a, b response) {
 func errorCode(t *testing.T, res response, want string) {
 	t.Helper()
 	v := decode[map[string]any](t, res)
-	if v["code"] != want {
+	if v["error"].(map[string]any)["code"] != want {
 		t.Fatalf("error = %s want %s", res.body, want)
 	}
 }
@@ -200,384 +204,390 @@ func strptr(p *string) string {
 	return *p
 }
 
+func testAPI(db *sql.DB) http.Handler {
+	return api.NewWithAuth(db, api.StaticTokens(map[string]api.Principal{
+		"test-token": {Scope: "test-client", Read: true, Manage: true, Command: true},
+	}))
+}
+
+// Test DTOs are independent of runtime structs. OpenAPI validates the complete
+// response including additional fields, required nulls, formats and timestamps.
+type employeeDTO struct {
+	ID              string  `json:"id"`
+	DisplayName     string  `json:"display_name"`
+	PersonnelNumber *string `json:"personnel_number"`
+	IsActive        bool    `json:"is_active"`
+}
+type credentialDTO struct {
+	ID         string     `json:"id"`
+	EmployeeID string     `json:"employee_id"`
+	Value      string     `json:"value"`
+	IsActive   bool       `json:"is_active"`
+	DisabledAt *time.Time `json:"disabled_at"`
+}
+type batteryDTO struct {
+	ID              string    `json:"id"`
+	Status          string    `json:"status"`
+	CurrentLocation *string   `json:"current_location"`
+	CurrentHolder   *string   `json:"current_holder_employee_id"`
+	Version         int64     `json:"version"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+type operationDTO struct {
+	ID                  string    `json:"id"`
+	BatteryID           string    `json:"battery_id"`
+	Type                string    `json:"type"`
+	Actor               string    `json:"actor_employee_id"`
+	CredentialID        string    `json:"credential_id"`
+	BatteryVersion      int64     `json:"battery_version"`
+	SourceLocation      *string   `json:"source_location"`
+	DestinationLocation *string   `json:"destination_location"`
+	SourceHolder        *string   `json:"source_holder_employee_id"`
+	DestinationHolder   *string   `json:"destination_holder_employee_id"`
+	OccurredAt          time.Time `json:"occurred_at"`
+}
+type commandDTO struct {
+	Battery   batteryDTO   `json:"battery"`
+	Operation operationDTO `json:"operation"`
+}
+type pageDTO[T any] struct {
+	Items      []T     `json:"items"`
+	NextCursor *string `json:"next_cursor"`
+}
 type fixture struct {
-	ivan, olga api.Employee
-	cabinets   []api.Cabinet
-	shelves    []api.Shelf
-	cells      []api.Cell
+	ivan, olga         employeeDTO
+	ivanCard, olgaCard credentialDTO
 }
 
 func (h *harness) fixture() fixture {
 	h.t.Helper()
 	f := fixture{}
-	f.ivan = decode[api.Employee](h.t, h.post("/employees", map[string]any{"name": "  Иван Петров  ", "barcode": "00001234"}))
-	f.olga = decode[api.Employee](h.t, h.post("/employees", map[string]any{"name": "Ольга Иванова", "barcode": "00009876"}))
-	for _, n := range []int{1, 2} {
-		f.cabinets = append(f.cabinets, decode[api.Cabinet](h.t, h.post("/cabinets", map[string]any{"number": n})))
-	}
-	for _, p := range [][2]int{{0, 1}, {0, 2}, {1, 1}} {
-		f.shelves = append(f.shelves, decode[api.Shelf](h.t, h.post("/cabinets/"+f.cabinets[p[0]].ID+"/shelves", map[string]any{"number": p[1]})))
-	}
-	for _, p := range [][2]int{{0, 1}, {0, 2}, {1, 1}, {2, 1}} {
-		f.cells = append(f.cells, decode[api.Cell](h.t, h.post("/shelves/"+f.shelves[p[0]].ID+"/cells", map[string]any{"number": p[1]})))
-	}
+	f.ivan = decode[employeeDTO](h.t, h.post("/employees", map[string]any{"display_name": "Иван Петров", "personnel_number": "00004281"}))
+	f.olga = decode[employeeDTO](h.t, h.post("/employees", map[string]any{"display_name": "Ольга Иванова"}))
+	f.ivanCard = decode[credentialDTO](h.t, h.post("/employees/"+f.ivan.ID+"/credentials", map[string]any{"value": "00001234"}))
+	f.olgaCard = decode[credentialDTO](h.t, h.post("/employees/"+f.olga.ID+"/credentials", map[string]any{"value": "00009876"}))
 	return f
 }
-func (h *harness) register(f fixture, code string, cell int) api.CommandResult {
-	h.t.Helper()
-	return decode[api.CommandResult](h.t, h.post("/batteries", map[string]any{"inventory_code": code, "cell_id": f.cells[cell].ID, "employee_barcode": "00001234"}))
+func storeBody(code, location string) map[string]any {
+	return map[string]any{"inventory_code": code, "actor_credential_value": "00001234", "destination_location": location}
 }
-func (h *harness) action(id, action, barcode, target string) response {
+func (h *harness) register(code, location string) commandDTO {
 	h.t.Helper()
-	body := map[string]any{"employee_barcode": barcode}
-	if target != "" {
-		if action == "loss" {
-			body["reason"] = target
-		} else {
-			body["target_cell_id"] = target
-		}
+	return decode[commandDTO](h.t, h.post("/batteries", storeBody(code, location)))
+}
+func actionBody(card, destination string) map[string]any {
+	body := map[string]any{"actor_credential_value": card}
+	if destination != "" {
+		body["destination_location"] = destination
 	}
-	return h.post("/batteries/"+id+"/"+action, body)
+	return body
 }
-func (h *harness) battery(id string) api.Battery {
+func (h *harness) action(id, action, card, destination string) response {
 	h.t.Helper()
-	return decode[api.Battery](h.t, h.get("/batteries/"+id))
+	return h.post("/batteries/"+id+"/"+action, actionBody(card, destination))
 }
-func (h *harness) operations(query string) []api.Operation {
+func (h *harness) battery(id string) batteryDTO {
 	h.t.Helper()
-	var page struct {
-		Items []api.Operation `json:"items"`
-	}
-	page = decode[struct {
-		Items []api.Operation `json:"items"`
-	}](h.t, h.get("/operations"+query))
-	return page.Items
+	return decode[batteryDTO](h.t, h.get("/batteries/"+id))
+}
+func (h *harness) operations(path string) []operationDTO {
+	h.t.Helper()
+	return decode[pageDTO[operationDTO]](h.t, h.get(path)).Items
 }
 
-func TestIntegrationT01T02T04T08T13T14T15T17_AllRoutes(t *testing.T) {
+func TestIntegrationAll19RoutesAndStableIdentity(t *testing.T) {
 	h := newHarness(t)
 	f := h.fixture()
-	if f.ivan.ActiveCredential.Barcode != "00001234" || f.ivan.Name != "Иван Петров" {
-		t.Fatal("name normalization or leading zeros lost")
+	if strptr(f.ivan.PersonnelNumber) != "00004281" || f.ivanCard.Value != "00001234" {
+		t.Fatal("leading zero identity lost")
 	}
-	for i, want := range []string{"1.1.1", "1.1.2", "1.2.1", "2.1.1"} {
-		if f.cells[i].Address != want {
-			t.Fatalf("cell address %s want %s", f.cells[i].Address, want)
+	resolved := h.request("POST", "/credential-resolutions", map[string]any{"credential_value": "00001234"}, "", 200)
+	if decode[struct {
+		Employee employeeDTO `json:"employee"`
+	}](t, resolved).Employee.ID != f.ivan.ID {
+		t.Fatal("wrong card resolution")
+	}
+	r := h.register("AKB-0001", "1.1.1")
+	h.register("AKB-0002", "1.1.2")
+	id, key := r.Battery.ID, uuid.NewString()
+	body := actionBody("00001234", "")
+	body["expected_version"], body["observed_source_location"] = 1, "1.1.1"
+	take := h.request("POST", "/batteries/"+id+"/take", body, key, 201)
+	taken := decode[commandDTO](t, take)
+	if taken.Battery.Status != "ISSUED" || strptr(taken.Battery.CurrentHolder) != f.ivan.ID || taken.Battery.Version != 2 || strptr(taken.Operation.SourceLocation) != "1.1.1" || taken.Operation.CredentialID != f.ivanCard.ID {
+		t.Fatal("bad TAKE projection/history")
+	}
+	custody := decode[pageDTO[batteryDTO]](t, h.get("/employees/"+f.ivan.ID+"/batteries"))
+	if len(custody.Items) != 1 || custody.Items[0].ID != id {
+		t.Fatal("wrong custody")
+	}
+	errorCode(t, h.request("POST", "/batteries/"+id+"/return", actionBody("00009876", "1.2.4"), uuid.NewString(), 403), "RETURN_NOT_ALLOWED")
+	if h.battery(id).Version != 2 {
+		t.Fatal("foreign RETURN changed holder")
+	}
+	errorCode(t, h.request("PATCH", "/employees/"+f.ivan.ID, map[string]any{"is_active": false}, uuid.NewString(), 409), "EMPLOYEE_HAS_CUSTODY")
+	newCard := decode[credentialDTO](t, h.post("/employees/"+f.ivan.ID+"/credentials", map[string]any{"value": "00005678", "replaces_credential_id": f.ivanCard.ID}))
+	if newCard.EmployeeID != f.ivan.ID || newCard.ID == f.ivanCard.ID {
+		t.Fatal("replacement lost employee identity")
+	}
+	errorCode(t, h.request("POST", "/credential-resolutions", map[string]any{"credential_value": "00001234"}, "", 403), "CREDENTIAL_INACTIVE")
+	ret := decode[commandDTO](t, h.action(id, "return", "00005678", "1.2.4"))
+	if ret.Battery.Version != 3 || ret.Operation.Actor != f.ivan.ID || strptr(ret.Operation.SourceHolder) != f.ivan.ID || ret.Operation.CredentialID != newCard.ID {
+		t.Fatal("same employee could not return with new card")
+	}
+	replay := h.request("POST", "/batteries/"+id+"/take", body, key, 201)
+	equalJSON(t, take, replay)
+	if replay.header.Get("Idempotency-Replayed") != "true" || h.battery(id).Version != 3 {
+		t.Fatal("old TAKE replay changed current")
+	}
+	moved := decode[commandDTO](t, h.action(id, "move", "00005678", "2.1.2"))
+	if strptr(moved.Operation.SourceLocation) != "1.2.4" || strptr(moved.Operation.DestinationLocation) != "2.1.2" || moved.Battery.Version != 4 || !moved.Operation.OccurredAt.Equal(moved.Battery.UpdatedAt) {
+		t.Fatal("MOVE/time projection wrong")
+	}
+	h.get("/operations/" + moved.Operation.ID)
+	before := h.get("/operations/" + taken.Operation.ID)
+	if decode[operationDTO](t, before).CredentialID != f.ivanCard.ID {
+		t.Fatal("old TAKE credential changed")
+	}
+	disabled := decode[credentialDTO](t, h.request("PATCH", "/employees/"+f.ivan.ID+"/credentials/"+newCard.ID, map[string]any{"is_active": false}, uuid.NewString(), 200))
+	again := decode[credentialDTO](t, h.request("PATCH", "/employees/"+f.ivan.ID+"/credentials/"+newCard.ID, map[string]any{"is_active": false}, uuid.NewString(), 200))
+	if disabled.DisabledAt == nil || again.DisabledAt == nil || !disabled.DisabledAt.Equal(*again.DisabledAt) {
+		t.Fatal("repeat disable changed historical time")
+	}
+	equalJSON(t, before, h.get("/operations/"+taken.Operation.ID))
+	h.request("PATCH", "/employees/"+f.ivan.ID, map[string]any{"display_name": "Иван Петров II", "is_active": false}, uuid.NewString(), 200)
+	for _, path := range []string{"/employees", "/employees/" + f.ivan.ID, "/employees/" + f.ivan.ID + "/credentials", "/batteries", "/batteries/" + id, "/employees/" + f.ivan.ID + "/operations", "/operations"} {
+		h.get(path)
+	}
+	history := h.operations("/batteries/" + id + "/operations")
+	if len(history) != 4 {
+		t.Fatalf("history length %d", len(history))
+	}
+	for i, typ := range []string{"MOVE", "RETURN", "TAKE", "STORE"} {
+		if history[i].Type != typ || history[i].BatteryVersion != int64(4-i) {
+			t.Fatal("history not ordered by version")
 		}
 	}
-	reg := h.register(f, "AKB-0001", 0)
-	h.register(f, "AKB-0002", 1)
-	id := reg.Battery.ID
-	path := "/batteries/" + id
-	key := uuid.NewString()
-	body := map[string]any{"employee_barcode": "00001234"}
-	checkout := h.request("POST", path+"/checkout", body, key, 201)
-	co := decode[api.CommandResult](t, checkout)
-	if strptr(co.Battery.HolderEmployeeID) != f.ivan.ID || co.Battery.Version != 2 || co.Operation.ActorEmployeeID != f.ivan.ID || strptr(co.Operation.ToHolderEmployeeID) != f.ivan.ID {
-		t.Fatal("incorrect checkout state/actor")
+	at := url.QueryEscape(taken.Operation.OccurredAt.Format(time.RFC3339Nano))
+	if len(h.operations("/operations?battery_id="+id+"&from="+at)) != 3 || len(h.operations("/operations?battery_id="+id+"&to="+at)) != 1 {
+		t.Fatal("history time bounds must be inclusive from/exclusive to")
 	}
-	returned := decode[api.CommandResult](t, h.action(id, "return", "00009876", f.cells[2].ID))
-	if returned.Operation.ActorEmployeeID != f.olga.ID || strptr(returned.Operation.FromHolderEmployeeID) != f.ivan.ID || returned.Battery.Version != 3 {
-		t.Fatal("return actor confused with previous holder")
+	if len(h.operations("/operations?location=1.2.4")) != 2 {
+		t.Fatal("history address filter must cover source and destination")
 	}
-	equalJSON(t, checkout, h.request("POST", path+"/checkout", body, key, 201))
-	if current := h.battery(id); current.Status != "stored" || current.Version != 3 {
-		t.Fatal("replay applied checkout twice")
+	if len(h.operations("/operations?employee_id="+f.ivan.ID)) != 5 {
+		t.Fatal("employee history duplicated/missed")
 	}
-	moved := decode[api.CommandResult](t, h.action(id, "move", "00001234", f.cells[3].ID))
-	if moved.Battery.Version != 4 {
-		t.Fatal("move version")
+	occupied := decode[pageDTO[batteryDTO]](t, h.get("/batteries?location=2.1.2"))
+	if len(occupied.Items) != 1 || occupied.Items[0].ID != id {
+		t.Fatal("exact address contents wrong")
 	}
-	lost := decode[api.CommandResult](t, h.action(id, "loss", "00001234", "  Не обнаружена при проверке  "))
-	if lost.Battery.Status != "lost" || lost.Battery.Version != 5 || lost.Battery.CellID != nil || lost.Battery.HolderEmployeeID != nil || strptr(lost.Operation.FromCellID) != f.cells[3].ID || strptr(lost.Operation.Reason) != "Не обнаружена при проверке" {
-		t.Fatal("lost state or previous location incorrect")
+	if len(decode[pageDTO[batteryDTO]](t, h.get("/batteries?location=99.99.99")).Items) != 0 {
+		t.Fatal("empty exact address should have no batteries")
 	}
-	replacement := decode[api.Credential](t, h.request("PUT", "/employees/"+f.ivan.ID+"/credential", map[string]any{"barcode": "00005678"}, uuid.NewString(), 200))
-	if replacement.EmployeeID != f.ivan.ID || replacement.Barcode != "00005678" || replacement.ID == f.ivan.ActiveCredential.ID {
-		t.Fatal("credential replacement lost identity")
-	}
-	if h.count("SELECT count(*) FROM employee_credentials WHERE employee_id=$1", f.ivan.ID) != 2 || h.count("SELECT count(*) FROM employee_credentials WHERE employee_id=$1 AND revoked_at IS NULL", f.ivan.ID) != 1 {
-		t.Fatal("credential history invariant")
-	}
-	for _, code := range []string{"00001234", "00009876"} {
-		errorCode(t, h.request("PUT", "/employees/"+f.ivan.ID+"/credential", map[string]any{"barcode": code}, uuid.NewString(), 409), "BARCODE_EXISTS")
-	}
-	employee := decode[api.Employee](t, h.get("/employees/"+f.ivan.ID))
-	if employee.ActiveCredential.ID != replacement.ID {
-		t.Fatal("failed replacement revoked active credential")
-	}
-	noChange := decode[api.Credential](t, h.request("PUT", "/employees/"+f.ivan.ID+"/credential", map[string]any{"barcode": "00005678"}, uuid.NewString(), 200))
-	if noChange.ID != replacement.ID {
-		t.Fatal("same barcode created unnecessary credential")
-	}
-	equalJSON(t, checkout, h.request("POST", path+"/checkout", body, key, 201))
-	errorCode(t, h.request("POST", "/batteries", map[string]any{"inventory_code": "OLD-CARD", "cell_id": f.cells[0].ID, "employee_barcode": "00001234"}, uuid.NewString(), 404), "EMPLOYEE_NOT_FOUND")
-	ops := h.operations("?battery_id=" + id)
-	if len(ops) != 5 {
-		t.Fatalf("history has %d rows want 5", len(ops))
-	}
-	for i, want := range []string{"loss", "move", "return", "checkout", "register"} {
-		if ops[i].Type != want || ops[i].BatteryVersion != int32(5-i) {
-			t.Fatalf("bad history order: %+v", ops)
-		}
-	}
-	if ops[3].CredentialID != f.ivan.ActiveCredential.ID {
-		t.Fatal("old operation changed credential")
-	}
-	employeeOps := h.operations("?employee_id=" + f.ivan.ID)
-	if len(employeeOps) != 6 {
-		t.Fatalf("OR employee filter duplicated/missed rows: got %d want 6", len(employeeOps))
-	}
-	cellOps := h.operations("?cell_id=" + f.cells[3].ID)
-	if len(cellOps) != 2 {
-		t.Fatalf("cell filter has %d rows", len(cellOps))
-	}
-	at := url.QueryEscape(co.Operation.OccurredAt.Format(time.RFC3339Nano))
-	from := h.operations("?battery_id=" + id + "&from=" + at)
-	to := h.operations("?battery_id=" + id + "&to=" + at)
-	if len(from) != 4 || len(to) != 1 {
-		t.Fatalf("time bounds from inclusive/to exclusive failed: %d %d", len(from), len(to))
-	}
-	op := decode[api.Operation](t, h.get("/operations/"+lost.Operation.ID))
-	if op.ID != lost.Battery.LastOperationID {
-		t.Fatal("last operation link wrong")
-	}
-	for _, p := range []string{"/employees", "/cabinets", "/cabinets/" + f.cabinets[0].ID + "/shelves", "/cells", "/batteries", "/batteries?status=lost", "/batteries?cell_id=" + f.cells[1].ID, "/batteries?holder_employee_id=" + f.ivan.ID} {
-		h.get(p)
-	}
-	h.get("/employees?limit=1&offset=1")
-	h.get("/cells?shelf_id=" + f.shelves[0].ID + "&occupied=false")
 	h.contract.assertAllOperations(t)
-}
-
-func TestIntegrationT03T09T18T19_ValidationAndAtomicErrors(t *testing.T) {
-	h := newHarness(t)
-	f := h.fixture()
-	reg := h.register(f, "FIRST", 0)
-	failedKey := uuid.NewString()
-	body := map[string]any{"inventory_code": "SECOND", "cell_id": f.cells[0].ID, "employee_barcode": "00001234"}
-	errorCode(t, h.request("POST", "/batteries", body, failedKey, 409), "CELL_OCCUPIED")
-	if h.count("SELECT count(*) FROM batteries") != 1 || h.count("SELECT count(*) FROM operations") != 1 || h.count("SELECT count(*) FROM idempotency_records WHERE key=$1", failedKey) != 0 {
-		t.Fatal("rejected registration left partial changes")
-	}
-	body["cell_id"] = f.cells[1].ID
-	h.request("POST", "/batteries", body, failedKey, 201) // Failed keys can be corrected and reused.
-	errorCode(t, h.request("POST", "/batteries", body, uuid.NewString(), 409), "INVENTORY_CODE_EXISTS")
-	key := uuid.NewString()
-	original := h.request("POST", "/employees", map[string]any{"name": "Canonical", "barcode": "0000000"}, key, 201)
-	equalJSON(t, original, h.raw("POST", "/employees", `{ "barcode":"0000000", "name":"  Canonical  " }`, key, "application/json; charset=utf-8", 201))
-	errorCode(t, h.request("POST", "/employees", map[string]any{"name": "Changed", "barcode": "0000000"}, key, 409), "IDEMPOTENCY_CONFLICT")
-	errorCode(t, h.request("POST", "/cabinets", map[string]any{"number": 99}, key, 409), "IDEMPOTENCY_CONFLICT")
-	before := h.count("SELECT count(*) FROM idempotency_records")
-	tests := []struct {
-		method, path, body, key, content string
-		status                           int
-		code                             string
-	}{
-		{"POST", "/employees", `{"name":"A","barcode":"A","unknown":1}`, "k", "application/json", 400, "VALIDATION_ERROR"},
-		{"POST", "/employees", `{"name":"A","name":"B","barcode":"A"}`, "k", "application/json", 400, "VALIDATION_ERROR"},
-		{"POST", "/employees", `{"name":null,"barcode":"A"}`, "k", "application/json", 400, "VALIDATION_ERROR"},
-		{"POST", "/employees", `null`, "k", "application/json", 400, "VALIDATION_ERROR"},
-		{"POST", "/employees", `{"name":"A"}`, "k", "application/json", 400, "VALIDATION_ERROR"},
-		{"POST", "/employees", `{"name":"A","barcode":" A "}`, "k", "application/json", 400, "VALIDATION_ERROR"},
-		{"POST", "/employees", `{"name":"A","barcode":123}`, "k", "application/json", 400, "VALIDATION_ERROR"},
-		{"POST", "/employees", `{"name":"A","barcode":"A"} {}`, "k", "application/json", 400, "VALIDATION_ERROR"},
-		{"POST", "/employees?x=1", `{"name":"A","barcode":"A"}`, "k", "application/json", 400, "VALIDATION_ERROR"},
-		{"GET", "/employees/not-uuid", ``, "", "", 400, "VALIDATION_ERROR"},
-		{"POST", "/batteries", `{"inventory_code":"X","cell_id":"bad","employee_barcode":"00001234"}`, "k", "application/json", 400, "VALIDATION_ERROR"},
-		{"POST", "/cabinets", `{"number":-1}`, "k", "application/json", 400, "VALIDATION_ERROR"},
-		{"POST", "/cabinets", `{"number":1.5}`, "k", "application/json", 400, "VALIDATION_ERROR"},
-		{"POST", "/cabinets", `{"number":2147483648}`, "k", "application/json", 400, "VALIDATION_ERROR"},
-		{"POST", "/batteries/" + reg.Battery.ID + "/loss", `{"employee_barcode":"00001234","reason":"  "}`, "k", "application/json", 400, "VALIDATION_ERROR"},
-		{"POST", "/employees", `{"name":"A","barcode":"A"}`, "", "application/json", 400, "VALIDATION_ERROR"},
-		{"PUT", "/employees/" + f.ivan.ID + "/credential", `{"barcode":"A"}`, "", "application/json", 400, "VALIDATION_ERROR"},
-		{"POST", "/employees", `{"name":"A","barcode":"A"}`, "k", "text/plain", 415, "UNSUPPORTED_MEDIA_TYPE"},
-		{"POST", "/employees", strings.Repeat(" ", 65537), "k", "application/json", 413, "REQUEST_TOO_LARGE"},
-		{"GET", "/employees?limit=0", ``, "", "", 400, "VALIDATION_ERROR"},
-		{"GET", "/employees?limit=101", ``, "", "", 400, "VALIDATION_ERROR"},
-		{"GET", "/employees?offset=-1", ``, "", "", 400, "VALIDATION_ERROR"},
-		{"GET", "/operations?from=2026-01-02T00:00:00Z&to=2026-01-01T00:00:00Z", ``, "", "", 400, "VALIDATION_ERROR"},
-	}
-	for i, tc := range tests {
-		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			r := h.raw(tc.method, tc.path, tc.body, tc.key, tc.content, tc.status)
-			errorCode(t, r, tc.code)
-		})
-	}
-	if h.count("SELECT count(*) FROM idempotency_records") != before {
-		t.Fatal("invalid requests reserved keys")
-	}
-	if b := h.battery(reg.Battery.ID); b.Version != 1 || b.Status != "stored" {
-		t.Fatal("invalid requests changed state")
-	}
 }
 
 type concurrentCommand struct{ method, path, body, key string }
 
+func commandJSON(t *testing.T, method, path, key string, body any) concurrentCommand {
+	t.Helper()
+	b, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return concurrentCommand{method, path, string(b), key}
+}
 func (h *harness) parallel(a, b concurrentCommand) [2]response {
 	h.t.Helper()
 	commands := []concurrentCommand{a, b}
 	var servers [2]*httptest.Server
-	var ids [2]int
+	var pids [2]int
 	for i := range servers {
 		db := stdlib.OpenDB(*h.config)
 		db.SetMaxOpenConns(1)
 		defer db.Close()
-		if err := db.QueryRow("SELECT pg_backend_pid()").Scan(&ids[i]); err != nil {
+		if err := db.QueryRow("SELECT pg_backend_pid()").Scan(&pids[i]); err != nil {
 			h.t.Fatal(err)
 		}
-		servers[i] = httptest.NewServer(api.New(db))
+		servers[i] = httptest.NewServer(testAPI(db))
 		defer servers[i].Close()
 	}
-	if ids[0] == ids[1] {
-		h.t.Fatal("concurrency requires independent PostgreSQL sessions")
+	if pids[0] == pids[1] {
+		h.t.Fatal("concurrency must use independent PostgreSQL sessions")
 	}
-	var result [2]response
-	var errs [2]error
 	start := make(chan struct{})
-	var ready, done sync.WaitGroup
-	ready.Add(2)
-	done.Add(2)
+	var wg sync.WaitGroup
+	var results [2]response
+	var errs [2]error
 	for i := range commands {
+		wg.Add(1)
 		go func(i int) {
-			defer done.Done()
-			ready.Done()
+			defer wg.Done()
 			<-start
 			c := commands[i]
-			result[i], errs[i] = perform(servers[i].Client(), servers[i].URL, c.method, c.path, c.body, c.key, "application/json")
+			results[i], errs[i] = perform(servers[i].Client(), servers[i].URL, c.method, c.path, c.body, c.key, "application/json")
 		}(i)
 	}
-	ready.Wait()
 	close(start)
-	done.Wait()
-	for i := range errs {
-		if errs[i] != nil {
-			h.t.Fatal(errs[i])
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			h.t.Fatal(err)
 		}
-		h.contract.validate(h.t, result[i])
+		h.contract.validate(h.t, results[i])
 	}
-	return result
-}
-func commandJSON(t *testing.T, method, path, key string, body any) concurrentCommand {
-	t.Helper()
-	data, err := json.Marshal(body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return concurrentCommand{method, path, string(data), key}
+	return results
 }
 func oneWinner(t *testing.T, r [2]response, code string) int {
 	t.Helper()
 	winner := -1
-	for i, v := range r {
-		if v.status == 201 {
-			if winner != -1 {
-				t.Fatal("both concurrent commands succeeded")
+	for i, res := range r {
+		if res.status == 201 {
+			if winner >= 0 {
+				t.Fatal("both concurrent requests succeeded")
 			}
 			winner = i
 		} else {
-			if v.status != 409 {
-				t.Fatalf("unexpected status %d: %s", v.status, v.body)
+			if res.status != 409 {
+				t.Fatalf("unexpected %d: %s", res.status, res.body)
 			}
-			errorCode(t, v, code)
+			errorCode(t, res, code)
 		}
 	}
-	if winner == -1 {
-		t.Fatal("neither command succeeded")
+	if winner < 0 {
+		t.Fatal("neither concurrent request succeeded")
 	}
 	return winner
 }
-
-func TestIntegrationT05_ConcurrentCheckout(t *testing.T) {
+func TestIntegrationConcurrentTake(t *testing.T) {
 	h := newHarness(t)
-	f := h.fixture()
-	reg := h.register(f, "RACE", 0)
-	path := "/batteries/" + reg.Battery.ID + "/checkout"
-	r := h.parallel(commandJSON(t, "POST", path, uuid.NewString(), map[string]any{"employee_barcode": "00001234"}), commandJSON(t, "POST", path, uuid.NewString(), map[string]any{"employee_barcode": "00009876"}))
-	winner := oneWinner(t, r, "INVALID_TRANSITION")
-	win := decode[api.CommandResult](t, r[winner])
-	current := h.battery(reg.Battery.ID)
-	if current.Version != 2 || strptr(current.HolderEmployeeID) != strptr(win.Battery.HolderEmployeeID) || h.count("SELECT count(*) FROM operations WHERE type='checkout'") != 1 {
-		t.Fatal("double checkout or wrong holder")
+	h.fixture()
+	r := h.register("RACE", "1.1.1")
+	path := "/batteries/" + r.Battery.ID + "/take"
+	results := h.parallel(commandJSON(t, "POST", path, uuid.NewString(), actionBody("00001234", "")), commandJSON(t, "POST", path, uuid.NewString(), actionBody("00009876", "")))
+	winner := oneWinner(t, results, "BATTERY_ALREADY_ISSUED")
+	won := decode[commandDTO](t, results[winner])
+	current := h.battery(r.Battery.ID)
+	if current.Version != 2 || strptr(current.CurrentHolder) != strptr(won.Battery.CurrentHolder) || h.count("SELECT count(*) FROM battery_operations WHERE type='TAKE'") != 1 {
+		t.Fatal("double TAKE")
 	}
 }
-func TestIntegrationT06_ConcurrentPlacement(t *testing.T) {
-	h := newHarness(t)
-	f := h.fixture()
-	a := h.register(f, "A", 0)
-	b := h.register(f, "B", 1)
-	body := map[string]any{"employee_barcode": "00001234", "target_cell_id": f.cells[2].ID}
-	r := h.parallel(commandJSON(t, "POST", "/batteries/"+a.Battery.ID+"/move", uuid.NewString(), body), commandJSON(t, "POST", "/batteries/"+b.Battery.ID+"/move", uuid.NewString(), body))
-	win := oneWinner(t, r, "CELL_OCCUPIED")
-	ids := []string{a.Battery.ID, b.Battery.ID}
-	loser := h.battery(ids[1-win])
-	if loser.Version != 1 || strptr(loser.CellID) != f.cells[1-win].ID {
-		t.Fatal("losing move changed original location")
-	}
-	if h.count("SELECT count(*) FROM batteries WHERE cell_id=$1", f.cells[2].ID) != 1 || h.count("SELECT count(*) FROM operations WHERE type='move'") != 1 {
-		t.Fatal("double occupied cell")
+func TestIntegrationConcurrentMoveAndRegister(t *testing.T) {
+	t.Run("move", func(t *testing.T) {
+		h := newHarness(t)
+		h.fixture()
+		a := h.register("A", "3.1.1")
+		b := h.register("B", "3.1.2")
+		body := actionBody("00001234", "3.1.3")
+		r := h.parallel(commandJSON(t, "POST", "/batteries/"+a.Battery.ID+"/move", uuid.NewString(), body), commandJSON(t, "POST", "/batteries/"+b.Battery.ID+"/move", uuid.NewString(), body))
+		win := oneWinner(t, r, "LOCATION_OCCUPIED")
+		initial := []commandDTO{a, b}
+		loser := h.battery(initial[1-win].Battery.ID)
+		if loser.Version != 1 || strptr(loser.CurrentLocation) != strptr(initial[1-win].Battery.CurrentLocation) || h.count("SELECT count(*) FROM battery_operations WHERE type='MOVE'") != 1 || h.count("SELECT count(*) FROM batteries WHERE current_location='3.1.3'") != 1 {
+			t.Fatal("losing MOVE changed source/history or double occupied destination")
+		}
+	})
+	for _, sameInventory := range []bool{false, true} {
+		t.Run(fmt.Sprint("register-same-inventory-", sameInventory), func(t *testing.T) {
+			h := newHarness(t)
+			h.fixture()
+			b := storeBody("B", "3.1.3")
+			code := "LOCATION_OCCUPIED"
+			if sameInventory {
+				b = storeBody("A", "3.1.4")
+				code = "INVENTORY_CODE_EXISTS"
+			}
+			r := h.parallel(commandJSON(t, "POST", "/batteries", uuid.NewString(), storeBody("A", "3.1.3")), commandJSON(t, "POST", "/batteries", uuid.NewString(), b))
+			oneWinner(t, r, code)
+			if h.count("SELECT count(*) FROM batteries") != 1 || h.count("SELECT count(*) FROM battery_operations") != 1 {
+				t.Fatal("losing registration left partial state")
+			}
+		})
 	}
 }
-func TestIntegrationT07_ConcurrentIdenticalKeyAndConflictingKey(t *testing.T) {
+func TestIntegrationConcurrentReplayAndKeyConflict(t *testing.T) {
 	h := newHarness(t)
-	f := h.fixture()
-	reg := h.register(f, "REPLAY", 0)
-	path := "/batteries/" + reg.Battery.ID + "/checkout"
+	h.fixture()
+	reg := h.register("REPLAY", "3.2.1")
 	key := uuid.NewString()
-	c := commandJSON(t, "POST", path, key, map[string]any{"employee_barcode": "00001234"})
+	path := "/batteries/" + reg.Battery.ID + "/take"
+	c := commandJSON(t, "POST", path, key, actionBody("00001234", ""))
 	r := h.parallel(c, c)
 	h.check(r[0], 201)
 	h.check(r[1], 201)
 	equalJSON(t, r[0], r[1])
-	if h.count("SELECT count(*) FROM operations WHERE type='checkout'") != 1 || h.count("SELECT count(*) FROM idempotency_records WHERE key=$1", key) != 1 {
-		t.Fatal("same key applied more than once")
+	if h.count("SELECT count(*) FROM battery_operations WHERE type='TAKE'") != 1 || h.count("SELECT count(*) FROM idempotency_requests WHERE key=$1", key) != 1 || (r[0].header.Get("Idempotency-Replayed") == "true") == (r[1].header.Get("Idempotency-Replayed") == "true") {
+		t.Fatal("concurrent replay applied more than once or missing replay header")
 	}
 	conflictKey := uuid.NewString()
-	r = h.parallel(commandJSON(t, "POST", "/employees", conflictKey, map[string]any{"name": "A", "barcode": "RACE-A"}), commandJSON(t, "POST", "/employees", conflictKey, map[string]any{"name": "B", "barcode": "RACE-B"}))
-	oneWinner(t, r, "IDEMPOTENCY_CONFLICT")
+	r = h.parallel(commandJSON(t, "POST", "/employees", conflictKey, map[string]any{"display_name": "A"}), commandJSON(t, "POST", "/employees", conflictKey, map[string]any{"display_name": "B"}))
+	oneWinner(t, r, "IDEMPOTENCY_KEY_REUSED")
+	errorCode(t, h.request("POST", path, actionBody("00009876", ""), key, 409), "IDEMPOTENCY_KEY_REUSED")
+	errorCode(t, h.request("POST", "/employees", map[string]any{"display_name": "X"}, key, 409), "IDEMPOTENCY_KEY_REUSED")
 }
-
-func TestIntegrationT10_RollbackAfterBatteryUpdate(t *testing.T) {
-	for _, target := range []string{"operations", "idempotency_records"} {
+func TestIntegrationCachedConflictAfterAddressFreed(t *testing.T) {
+	h := newHarness(t)
+	h.fixture()
+	reg := h.register("FIRST", "3.2.2")
+	key := uuid.NewString()
+	body := storeBody("SECOND", "3.2.2")
+	conflict := h.request("POST", "/batteries", body, key, 409)
+	errorCode(t, conflict, "LOCATION_OCCUPIED")
+	if h.count("SELECT count(*) FROM batteries") != 1 || h.count("SELECT count(*) FROM battery_operations") != 1 || h.count("SELECT count(*) FROM idempotency_requests WHERE key=$1 AND http_status=409", key) != 1 {
+		t.Fatal("failed command not rolled back and cached atomically")
+	}
+	h.action(reg.Battery.ID, "take", "00001234", "")
+	replay := h.request("POST", "/batteries", body, key, 409)
+	equalJSON(t, conflict, replay)
+	if replay.header.Get("Idempotency-Replayed") != "true" || h.count("SELECT count(*) FROM batteries") != 1 {
+		t.Fatal("cached conflict retried effect")
+	}
+	h.request("POST", "/batteries", body, uuid.NewString(), 201)
+}
+func TestIntegrationRollbackAtEventAndResult(t *testing.T) {
+	for _, target := range []string{"battery_operations", "idempotency_requests"} {
 		t.Run(target, func(t *testing.T) {
 			h := newHarness(t)
-			f := h.fixture()
-			reg := h.register(f, "ROLLBACK", 0)
+			h.fixture()
+			reg := h.register("ROLLBACK", "3.2.1")
 			before := h.get("/batteries/" + reg.Battery.ID)
 			key := uuid.NewString()
 			event := "INSERT"
-			if target == "idempotency_records" {
+			if target == "idempotency_requests" {
 				event = "UPDATE"
 			}
-			_, err := h.owner.Exec(`CREATE FUNCTION force_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected failure'; END $$; CREATE TRIGGER force_failure BEFORE ` + event + ` ON ` + target + ` FOR EACH ROW EXECUTE FUNCTION force_failure()`)
+			_, err := h.owner.Exec(`CREATE FUNCTION force_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected private SQL failure'; END $$; CREATE TRIGGER force_failure BEFORE ` + event + ` ON ` + target + ` FOR EACH ROW EXECUTE FUNCTION force_failure()`)
 			if err != nil {
 				t.Fatal(err)
 			}
-			errorCode(t, h.request("POST", "/batteries/"+reg.Battery.ID+"/checkout", map[string]any{"employee_barcode": "00001234"}, key, 500), "INTERNAL_ERROR")
+			res := h.request("POST", "/batteries/"+reg.Battery.ID+"/take", actionBody("00001234", ""), key, 500)
+			errorCode(t, res, "INTERNAL_ERROR")
+			if bytes.Contains(res.body, []byte("injected private")) {
+				t.Fatal("internal SQL leaked")
+			}
 			equalJSON(t, before, h.get("/batteries/"+reg.Battery.ID))
-			if h.count("SELECT count(*) FROM operations") != 1 || h.count("SELECT count(*) FROM idempotency_records WHERE key=$1", key) != 0 {
-				t.Fatal("transaction did not roll back history/key")
+			if h.count("SELECT count(*) FROM battery_operations") != 1 || h.count("SELECT count(*) FROM idempotency_requests WHERE key=$1", key) != 0 {
+				t.Fatal("failure did not roll back operation/key")
 			}
 			if _, err := h.owner.Exec("DROP TRIGGER force_failure ON " + target); err != nil {
 				t.Fatal(err)
 			}
-			h.request("POST", "/batteries/"+reg.Battery.ID+"/checkout", map[string]any{"employee_barcode": "00001234"}, key, 201)
+			h.request("POST", "/batteries/"+reg.Battery.ID+"/take", actionBody("00001234", ""), key, 201)
 		})
 	}
 }
-
-func TestIntegrationT11_LostHTTPResponseAfterCommit(t *testing.T) {
+func TestIntegrationLostHTTPResponseAfterCommit(t *testing.T) {
 	h := newHarness(t)
-	f := h.fixture()
-	reg := h.register(f, "DROPPED", 0)
+	h.fixture()
+	reg := h.register("DROPPED", "3.2.1")
 	key := uuid.NewString()
-	path := "/batteries/" + reg.Battery.ID + "/checkout"
+	path := "/batteries/" + reg.Battery.ID + "/take"
 	captured := make(chan response, 1)
-	// ServeHTTP has committed before returning; hijacking closes the real TCP
-	// connection without forwarding the buffered response to the HTTP client.
+	// Handler commits first, then a wrapper closes TCP without sending its body.
 	drop := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rr := httptest.NewRecorder()
-		api.New(h.app).ServeHTTP(rr, r)
+		testAPI(h.app).ServeHTTP(rr, r)
 		captured <- response{rr.Code, bytes.Clone(rr.Body.Bytes()), rr.Header().Clone(), r}
 		conn, _, err := w.(http.Hijacker).Hijack()
 		if err == nil {
@@ -585,109 +595,321 @@ func TestIntegrationT11_LostHTTPResponseAfterCommit(t *testing.T) {
 		}
 	}))
 	defer drop.Close()
-	_, err := perform(drop.Client(), drop.URL, "POST", path, `{"employee_barcode":"00001234"}`, key, "application/json")
+	_, err := perform(drop.Client(), drop.URL, "POST", path, `{"actor_credential_value":"00001234"}`, key, "application/json")
 	if err == nil {
-		t.Fatal("client unexpectedly received dropped response")
+		t.Fatal("client received intentionally dropped response")
 	}
 	original := <-captured
 	h.check(original, 201)
-	replay := h.request("POST", path, map[string]any{"employee_barcode": "00001234"}, key, 201)
+	replay := h.request("POST", path, actionBody("00001234", ""), key, 201)
 	equalJSON(t, original, replay)
-	if h.count("SELECT count(*) FROM operations") != 2 || h.battery(reg.Battery.ID).Version != 2 {
-		t.Fatal("lost response caused second effect")
+	if h.count("SELECT count(*) FROM battery_operations") != 2 || h.battery(reg.Battery.ID).Version != 2 {
+		t.Fatal("lost response caused duplicate operation")
 	}
 }
 
-func TestIntegrationT12T16_LossAndInvalidTransitions(t *testing.T) {
+func TestIntegrationCredentialsInactiveAndUnresolved(t *testing.T) {
 	h := newHarness(t)
 	f := h.fixture()
-	a := h.register(f, "STORED", 0)
-	b := h.register(f, "ISSUED", 1)
-	invalid := func(id, action string, body any) {
-		t.Helper()
-		errorCode(t, h.request("POST", "/batteries/"+id+"/"+action, body, uuid.NewString(), 409), "INVALID_TRANSITION")
+	errorCode(t, h.request("POST", "/credential-resolutions", map[string]any{"credential_value": "UNKNOWN"}, "", 404), "CREDENTIAL_NOT_FOUND")
+	if h.count("SELECT count(*) FROM employees") != 2 {
+		t.Fatal("unknown scan created employee")
 	}
-	invalid(a.Battery.ID, "return", map[string]any{"employee_barcode": "00001234", "target_cell_id": f.cells[2].ID})
-	invalid(a.Battery.ID, "move", map[string]any{"employee_barcode": "00001234", "target_cell_id": f.cells[0].ID})
-	h.action(b.Battery.ID, "checkout", "00001234", "")
-	invalid(b.Battery.ID, "move", map[string]any{"employee_barcode": "00001234", "target_cell_id": f.cells[2].ID})
-	stored := decode[api.CommandResult](t, h.action(a.Battery.ID, "loss", "00009876", "Missing"))
-	issued := decode[api.CommandResult](t, h.action(b.Battery.ID, "loss", "00009876", "Missing"))
-	if strptr(stored.Operation.FromCellID) != f.cells[0].ID || stored.Operation.FromHolderEmployeeID != nil || strptr(issued.Operation.FromHolderEmployeeID) != f.ivan.ID || issued.Operation.FromCellID != nil {
-		t.Fatal("loss did not preserve previous state")
+	h.post("/employees/"+f.ivan.ID+"/credentials", map[string]any{"value": "00000001"})
+	if h.count("SELECT count(*) FROM employee_credentials WHERE employee_id=$1 AND disabled_at IS NULL", f.ivan.ID) != 2 {
+		t.Fatal("multiple active credentials unsupported")
 	}
-	for _, lost := range []api.CommandResult{stored, issued} {
-		if lost.Battery.Status != "lost" || lost.Battery.CellID != nil || lost.Battery.HolderEmployeeID != nil {
-			t.Fatal("lost battery still has current location")
-		}
-		invalid(lost.Battery.ID, "checkout", map[string]any{"employee_barcode": "00001234"})
-		invalid(lost.Battery.ID, "loss", map[string]any{"employee_barcode": "00001234", "reason": "Again"})
-	}
-	if h.count("SELECT count(*) FROM operations") != 5 {
-		t.Fatal("invalid transition created history")
+	errorCode(t, h.request("POST", "/employees/"+f.olga.ID+"/credentials", map[string]any{"value": "00001234"}, uuid.NewString(), 409), "ACTIVE_CREDENTIAL_EXISTS")
+	h.request("PATCH", "/employees/"+f.ivan.ID+"/credentials/"+f.ivanCard.ID, map[string]any{"is_active": false}, uuid.NewString(), 200)
+	errorCode(t, h.request("POST", "/employees/"+f.olga.ID+"/credentials", map[string]any{"value": "00001234"}, uuid.NewString(), 409), "CREDENTIAL_REUSE_UNCONFIRMED")
+	h.request("PATCH", "/employees/"+f.ivan.ID, map[string]any{"is_active": false}, uuid.NewString(), 200)
+	errorCode(t, h.request("POST", "/credential-resolutions", map[string]any{"credential_value": "00000001"}, "", 403), "EMPLOYEE_INACTIVE")
+	body := storeBody("INACTIVE", "4.1.1")
+	body["actor_credential_value"] = "00000001"
+	errorCode(t, h.request("POST", "/batteries", body, uuid.NewString(), 403), "EMPLOYEE_INACTIVE")
+	if h.count("SELECT count(*) FROM batteries") != 0 || h.count("SELECT count(*) FROM battery_operations") != 0 {
+		t.Fatal("inactive actor performed STORE")
 	}
 }
-
-func TestIntegrationT20_DatabaseConstraintsAndAppendOnlyHistory(t *testing.T) {
+func TestIntegrationInvalidTransitionsAndObservations(t *testing.T) {
 	h := newHarness(t)
-	f := h.fixture()
-	reg := h.register(f, "CONSTRAINT", 0)
-	tests := []struct {
-		sql, code string
-		args      []any
+	h.fixture()
+	reg := h.register("TRANSITIONS", "4.1.1")
+	id := reg.Battery.ID
+	path := "/batteries/" + id
+	for _, tc := range []struct {
+		action string
+		body   map[string]any
+		code   string
 	}{
-		{`INSERT INTO batteries(id,inventory_code,status,cell_id,version) VALUES($1,'DUP','stored',$2,1)`, "23505", []any{uuid.NewString(), f.cells[0].ID}},
-		{`INSERT INTO batteries(id,inventory_code,status,version) VALUES($1,'NO-HOLDER','issued',1)`, "23514", []any{uuid.NewString()}},
-		{`INSERT INTO batteries(id,inventory_code,status,cell_id,version) VALUES($1,'NO-CELL','stored',$2,1)`, "23503", []any{uuid.NewString(), uuid.NewString()}},
-		{`UPDATE operations SET credential_id=$1 WHERE id=$2`, "23503", []any{f.olga.ActiveCredential.ID, reg.Operation.ID}},
+		{"return", actionBody("00001234", "4.1.2"), "INVALID_BATTERY_STATE"},
+		{"move", actionBody("00001234", "4.1.1"), "SAME_LOCATION"},
+		{"take", map[string]any{"actor_credential_value": "00001234", "expected_version": 2}, "STATE_VERSION_MISMATCH"},
+		{"move", map[string]any{"actor_credential_value": "00001234", "destination_location": "4.1.2", "observed_source_location": "9.9.9"}, "SOURCE_MISMATCH"},
+	} {
+		errorCode(t, h.request("POST", path+"/"+tc.action, tc.body, uuid.NewString(), 409), tc.code)
 	}
-	for _, tc := range tests {
-		_, err := h.owner.Exec(tc.sql, tc.args...)
-		var pgerr *pgconn.PgError
-		if !errors.As(err, &pgerr) || pgerr.Code != tc.code {
-			t.Fatalf("constraint: error %v want SQLSTATE %s", err, tc.code)
+	if h.battery(id).Version != 1 || h.count("SELECT count(*) FROM battery_operations") != 1 {
+		t.Fatal("rejected observations changed state/history")
+	}
+	h.action(id, "take", "00001234", "")
+	errorCode(t, h.request("POST", path+"/take", actionBody("00001234", ""), uuid.NewString(), 409), "BATTERY_ALREADY_ISSUED")
+	errorCode(t, h.request("POST", path+"/move", actionBody("00001234", "4.1.2"), uuid.NewString(), 409), "INVALID_BATTERY_STATE")
+	if h.count("SELECT count(*) FROM battery_operations") != 2 {
+		t.Fatal("invalid transition appended history")
+	}
+}
+func TestIntegrationValidationAndCursor(t *testing.T) {
+	h := newHarness(t)
+	h.fixture()
+	reg := h.register("VALIDATION", "4.1.1")
+	before := h.count("SELECT count(*) FROM idempotency_requests")
+	for _, tc := range []struct {
+		method, path, body, key, content string
+		status                           int
+		code                             string
+	}{
+		{"POST", "/employees", `{"display_name":`, uuid.NewString(), "application/json", 400, "INVALID_REQUEST"},
+		{"POST", "/employees", `{"display_name":"A"} {}`, uuid.NewString(), "application/json", 400, "INVALID_REQUEST"},
+		{"POST", "/employees", `{"display_name":"A"}`, "", "application/json", 400, "INVALID_REQUEST"},
+		{"POST", "/employees", `{"display_name":"A"}`, "not-uuid", "application/json", 400, "INVALID_REQUEST"},
+		{"POST", "/employees", `{"display_name":"A"}`, uuid.NewString(), "text/plain", 415, "UNSUPPORTED_MEDIA_TYPE"},
+		{"POST", "/employees", strings.Repeat(" ", 65537), uuid.NewString(), "application/json", 413, "PAYLOAD_TOO_LARGE"},
+		{"POST", "/employees", `{"display_name":null}`, uuid.NewString(), "application/json", 400, "INVALID_REQUEST"},
+		{"POST", "/employees", `{"display_name":"A","unknown":1}`, uuid.NewString(), "application/json", 400, "INVALID_REQUEST"},
+		{"POST", "/employees", `{"display_name":"A","display_name":"B"}`, uuid.NewString(), "application/json", 400, "INVALID_REQUEST"},
+		{"POST", "/employees", `{}`, uuid.NewString(), "application/json", 400, "INVALID_REQUEST"},
+		{"POST", "/employees", `{"display_name":123}`, uuid.NewString(), "application/json", 400, "INVALID_REQUEST"},
+		{"GET", "/employees?limit=0", "", "", "", 400, "INVALID_REQUEST"},
+		{"GET", "/employees?limit=201", "", "", "", 400, "INVALID_REQUEST"},
+		{"GET", "/employees?is_active=maybe", "", "", "", 400, "INVALID_REQUEST"},
+		{"GET", "/batteries?status=LOST", "", "", "", 422, "VALIDATION_FAILED"},
+		{"GET", "/batteries?holder_employee_id=bad", "", "", "", 400, "INVALID_REQUEST"},
+		{"GET", "/operations?type=loss", "", "", "", 422, "VALIDATION_FAILED"},
+		{"GET", "/operations?from=bad", "", "", "", 400, "INVALID_REQUEST"},
+		{"GET", "/operations?from=2026-01-02T00:00:00Z&to=2026-01-01T00:00:00Z", "", "", "", 422, "VALIDATION_FAILED"},
+		{"GET", "/employees?cursor=bad", "", "", "", 400, "INVALID_REQUEST"},
+	} {
+		t.Run(fmt.Sprintf("%s %s %s", tc.method, tc.path, tc.body), func(t *testing.T) {
+			errorCode(t, h.raw(tc.method, tc.path, tc.body, tc.key, tc.content, tc.status), tc.code)
+		})
+	}
+	for _, location := range []string{"", " 4.1.2", "4.1.2 ", "01.1.1", "1.0.1", "1.1.01", "1.1", "x.y.z", "1.1.1\n"} {
+		t.Run("address-"+location, func(t *testing.T) {
+			errorCode(t, h.request("POST", "/batteries", storeBody("INVALID", location), uuid.NewString(), 422), "VALIDATION_FAILED")
+		})
+	}
+	// Validation happens before idempotency reservation, including invalid addresses.
+	if h.count("SELECT count(*) FROM idempotency_requests") != before || h.battery(reg.Battery.ID).Version != 1 {
+		t.Fatal("validation persisted key or changed battery")
+	}
+	page := decode[pageDTO[employeeDTO]](t, h.get("/employees?limit=1"))
+	if len(page.Items) != 1 || page.NextCursor == nil {
+		t.Fatal("missing cursor")
+	}
+	next := decode[pageDTO[employeeDTO]](t, h.get("/employees?limit=1&cursor="+url.QueryEscape(*page.NextCursor)))
+	if len(next.Items) != 1 || next.Items[0].ID == page.Items[0].ID {
+		t.Fatal("cursor repeated/skipped employee")
+	}
+	errorCode(t, h.request("GET", "/employees?limit=1&is_active=true&cursor="+url.QueryEscape(*page.NextCursor), nil, "", 400), "INVALID_REQUEST")
+	errorCode(t, h.request("GET", "/batteries?cursor="+url.QueryEscape(*page.NextCursor), nil, "", 400), "INVALID_REQUEST")
+}
+
+func TestIntegrationIdempotencyScopeSurvivesTokenRotation(t *testing.T) {
+	h := newHarness(t)
+	auth := api.StaticTokens(map[string]api.Principal{
+		"before-rotation":  {Scope: "stable-client", Read: true, Manage: true},
+		"after-rotation":   {Scope: "stable-client", Read: true, Manage: true},
+		"different-client": {Scope: "other-client", Read: true, Manage: true},
+	})
+	srv := httptest.NewServer(api.NewWithAuth(h.app, auth))
+	defer srv.Close()
+	key := uuid.NewString()
+	var original response
+	for i, token := range []string{"before-rotation", "after-rotation", "different-client"} {
+		res, err := performToken(srv.Client(), srv.URL, "POST", "/employees", `{"display_name":"Scoped"}`, key, "application/json", token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.check(res, 201)
+		if i == 0 {
+			original = res
+		}
+		if i == 1 {
+			equalJSON(t, original, res)
+			if res.header.Get("Idempotency-Replayed") != "true" {
+				t.Fatal("token rotation broke stable request scope")
+			}
+		}
+		if i == 2 && decode[employeeDTO](t, original).ID == decode[employeeDTO](t, res).ID {
+			t.Fatal("different principals shared idempotency result")
 		}
 	}
-	tx, err := h.owner.Begin()
+	if h.count("SELECT count(*) FROM employees") != 2 || h.count("SELECT count(*) FROM idempotency_requests WHERE key=$1", key) != 2 {
+		t.Fatal("wrong idempotency scope count")
+	}
+}
+func TestIntegrationAuthenticationAndPermissions(t *testing.T) {
+	h := newHarness(t)
+	h.fixture()
+	for _, token := range []string{"", "unknown", "read-only", "command-only"} {
+		t.Run(token, func(t *testing.T) {
+			adapter := api.StaticTokens(map[string]api.Principal{"read-only": {Scope: "reader", Read: true}, "command-only": {Scope: "operator", Read: true, Command: true}})
+			srv := httptest.NewServer(api.NewWithAuth(h.app, adapter))
+			defer srv.Close()
+			paths := []string{"/employees", "/employees"}
+			methods := []string{"GET", "POST"}
+			for i, path := range paths {
+				req, err := http.NewRequest(methods[i], srv.URL+"/api/v1"+path, strings.NewReader(`{"display_name":"Denied"}`))
+				if err != nil {
+					t.Fatal(err)
+				}
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("Idempotency-Key", uuid.NewString())
+				if token != "" {
+					req.Header.Set("Authorization", "Bearer "+token)
+				}
+				res, err := srv.Client().Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				body, _ := io.ReadAll(res.Body)
+				res.Body.Close()
+				r := response{res.StatusCode, body, res.Header, req}
+				want := 401
+				if token == "read-only" || token == "command-only" {
+					want = 200
+					if i == 1 {
+						want = 403
+					}
+				}
+				h.check(r, want)
+			}
+			if token == "read-only" {
+				req, _ := http.NewRequest("GET", srv.URL+"/api/v1/employees/"+decode[pageDTO[employeeDTO]](t, h.get("/employees")).Items[0].ID+"/credentials", nil)
+				req.Header.Set("Authorization", "Bearer "+token)
+				res, err := srv.Client().Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				body, _ := io.ReadAll(res.Body)
+				res.Body.Close()
+				h.check(response{res.StatusCode, body, res.Header, req}, 403)
+			}
+		})
+	}
+	if h.count("SELECT count(*) FROM employees") != 2 {
+		t.Fatal("unauthorized mutation persisted")
+	}
+	srv := httptest.NewServer(api.New(h.app))
+	defer srv.Close()
+	req, _ := http.NewRequest("GET", srv.URL+"/api/v1/employees", nil)
+	res, err := srv.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback()
-	for _, q := range []string{`UPDATE batteries SET status='issued',cell_id=NULL,holder_employee_id=$2 WHERE id=$1`, `UPDATE batteries SET status='lost',cell_id=NULL,holder_employee_id=NULL WHERE id=$1`} {
-		if _, err := tx.Exec(q, reg.Battery.ID, f.ivan.ID); err != nil { // second statement has only one placeholder
-			if !strings.Contains(q, "$2") {
-				if _, err = tx.Exec(q, reg.Battery.ID); err == nil {
-					continue
-				}
-			}
-			t.Fatal(err)
+	defer res.Body.Close()
+	if res.StatusCode != 401 {
+		t.Fatal("default API constructor must deny access")
+	}
+}
+func TestIntegrationDatabaseImmutableGuardsAndLeastPrivilege(t *testing.T) {
+	h := newHarness(t)
+	f := h.fixture()
+	reg := h.register("GUARDS", "4.1.1")
+	for _, tc := range []struct {
+		sql, code string
+		args      []any
+	}{
+		{"UPDATE battery_operations SET source_location=source_location WHERE id=$1", "55000", []any{reg.Operation.ID}},
+		{"DELETE FROM battery_operations WHERE id=$1", "55000", []any{reg.Operation.ID}},
+		{"TRUNCATE battery_operations", "55000", nil},
+		{"UPDATE employee_credentials SET value='OTHER' WHERE id=$1", "55000", []any{f.ivanCard.ID}},
+		{"UPDATE batteries SET inventory_code='OTHER' WHERE id=$1", "55000", []any{reg.Battery.ID}},
+		{"UPDATE idempotency_requests SET response_body='{}' WHERE http_status=201", "55000", nil},
+		{"DELETE FROM idempotency_requests WHERE http_status=201", "55000", nil},
+		{"UPDATE batteries SET current_location='4.1.2' WHERE id=$1", "23514", []any{reg.Battery.ID}},
+		{"INSERT INTO idempotency_requests(scope,key,request_hash) VALUES('incomplete',$1,repeat('a',64))", "23514", []any{uuid.NewString()}},
+	} {
+		_, err := h.owner.Exec(tc.sql, tc.args...)
+		var p *pgconn.PgError
+		if !errors.As(err, &p) || p.Code != tc.code {
+			t.Fatalf("guard %s: %v want SQLSTATE %s", tc.sql, err, tc.code)
 		}
 	}
 	if os.Getenv("TEST_APP_DATABASE_URL") == "" {
-		t.Log("TEST_APP_DATABASE_URL absent: limited database-role privileges not checked")
+		t.Log("TEST_APP_DATABASE_URL absent: restricted-role privileges not checked")
 		return
 	}
-	for _, query := range []string{"UPDATE operations SET reason=reason", "DELETE FROM operations", "TRUNCATE operations", "DELETE FROM batteries", "SELECT * FROM schema_migrations"} {
+	for _, query := range []string{"UPDATE battery_operations SET device_code=device_code", "DELETE FROM battery_operations", "TRUNCATE battery_operations", "DELETE FROM batteries", "SELECT * FROM schema_migrations", "SELECT * FROM legacy_operations", "SELECT * FROM legacy_cells"} {
 		_, err := h.app.Exec(query)
-		var pgerr *pgconn.PgError
-		if !errors.As(err, &pgerr) || pgerr.Code != "42501" {
-			t.Fatalf("app unexpectedly allowed %q: %v", query, err)
+		var p *pgconn.PgError
+		if !errors.As(err, &p) || p.Code != "42501" {
+			t.Fatalf("runtime unexpectedly permitted %q: %v", query, err)
 		}
 	}
 }
 
-func TestIntegrationConcurrentCredentialReplacement(t *testing.T) {
+func TestIntegrationHistoryCursorUsesVersionAndStableBoundary(t *testing.T) {
 	h := newHarness(t)
-	f := h.fixture()
-	path := "/employees/" + f.ivan.ID + "/credential"
-	r := h.parallel(commandJSON(t, "PUT", path, uuid.NewString(), map[string]any{"barcode": "NEW-A"}), commandJSON(t, "PUT", path, uuid.NewString(), map[string]any{"barcode": "NEW-B"}))
-	h.check(r[0], 200)
-	h.check(r[1], 200)
-	if h.count("SELECT count(*) FROM employee_credentials WHERE employee_id=$1", f.ivan.ID) != 3 || h.count("SELECT count(*) FROM employee_credentials WHERE employee_id=$1 AND revoked_at IS NULL", f.ivan.ID) != 1 {
-		t.Fatal("concurrent replacement violated credential uniqueness/history")
+	h.fixture()
+	reg := h.register("PAGING", "6.1.1")
+	h.action(reg.Battery.ID, "take", "00001234", "")
+	h.action(reg.Battery.ID, "return", "00001234", "6.1.2")
+	path := "/batteries/" + reg.Battery.ID + "/operations?limit=1"
+	first := decode[pageDTO[operationDTO]](t, h.get(path))
+	if len(first.Items) != 1 || first.Items[0].BatteryVersion != 3 || first.NextCursor == nil {
+		t.Fatal("wrong initial battery history page")
 	}
-	active := decode[api.Employee](t, h.get("/employees/"+f.ivan.ID)).ActiveCredential
-	if active.Barcode != "NEW-A" && active.Barcode != "NEW-B" {
-		t.Fatal("neither replacement became active")
+	// Higher versions created while paging are excluded from this continuation.
+	h.action(reg.Battery.ID, "move", "00001234", "6.1.3")
+	seen := map[string]bool{first.Items[0].ID: true}
+	cursor := first.NextCursor
+	for wantVersion := int64(2); wantVersion > 0; wantVersion-- {
+		if cursor == nil {
+			t.Fatal("premature history cursor end")
+		}
+		page := decode[pageDTO[operationDTO]](t, h.get(path+"&cursor="+url.QueryEscape(*cursor)))
+		if len(page.Items) != 1 || page.Items[0].BatteryVersion != wantVersion || seen[page.Items[0].ID] {
+			t.Fatal("history continuation duplicated, skipped, or included new version")
+		}
+		seen[page.Items[0].ID] = true
+		cursor = page.NextCursor
+	}
+	if cursor != nil {
+		t.Fatal("nonempty continuation after last battery history entry")
+	}
+	from := url.QueryEscape(reg.Operation.OccurredAt.Format(time.RFC3339Nano))
+	allPath := "/operations?battery_id=" + reg.Battery.ID + "&from=" + from + "&limit=1"
+	seen = map[string]bool{}
+	for pageNumber := 0; pageNumber < 6; pageNumber++ {
+		page := decode[pageDTO[operationDTO]](t, h.get(allPath))
+		for _, op := range page.Items {
+			if seen[op.ID] {
+				t.Fatal("time cursor duplicate")
+			}
+			seen[op.ID] = true
+		}
+		if page.NextCursor == nil {
+			break
+		}
+		allPath = "/operations?battery_id=" + reg.Battery.ID + "&from=" + from + "&limit=1&cursor=" + url.QueryEscape(*page.NextCursor)
+	}
+	if len(seen) != 4 {
+		t.Fatalf("time cursor lost rows: %d", len(seen))
+	}
+}
+
+func TestIntegrationInventoryCodeLookupPreservesLiteralIdentity(t *testing.T) {
+	h := newHarness(t)
+	h.fixture()
+	code := " B-LITERAL "
+	reg := h.register(code, "7.1.1")
+	page := decode[pageDTO[batteryDTO]](t, h.get("/batteries?inventory_code="+url.QueryEscape(code)))
+	if len(page.Items) != 1 || page.Items[0].ID != reg.Battery.ID {
+		t.Fatal("exact inventory lookup changed the registered identity")
+	}
+	if len(decode[pageDTO[batteryDTO]](t, h.get("/batteries?inventory_code=B-LITERAL")).Items) != 0 {
+		t.Fatal("inventory lookup silently normalized different codes")
 	}
 }

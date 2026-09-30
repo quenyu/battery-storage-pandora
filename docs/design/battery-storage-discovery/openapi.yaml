@@ -1,13 +1,13 @@
 # Design draft after manager decision. Endpoint table: architecture.md
 "openapi": "3.0.3"
 "info":
-  "title": "Pandora Battery Storage & Traceability — проект API v1"
-  "version": "1.1.0-draft"
-  "description": "Обновлённый проект по решению руководителя: шкафы, полки, ячейки отдельными таблицами не ведутся. Адреса — текстовые source_location/destination_location в immutable журнале и current_location в текущей проекции. Одна АКБ на точный канонический адрес; формат адреса требует подтверждения, 1.1.1 только пример. У строк нет FK на существующие места, нет управления пустыми/отключёнными местами. RETURN только взявшим сотрудником. Детальный клиент ТСД/offline вне этапа. Device code — необязательная серверная метка, без справочника устройств. POST/PATCH изменения требуют Idempotency-Key, lookup read-only без ключа. Четыре domain таблицы плюс техническая idempotency_requests. Authentication provider и источник сотрудников ещё не подтверждены. Этот YAML не подключён к существующему демонстрационному серверу."
+  "title": "Pandora Battery Storage & Traceability — MVP API v1"
+  "version": "1.1.0"
+  "description": "Обновлённый проект по решению руководителя: шкафы, полки, ячейки отдельными таблицами не ведутся. Адреса — текстовые source_location/destination_location в immutable журнале и current_location в текущей проекции. Одна АКБ на точный канонический адрес; формат адреса: три положительных числа шкаф.полка.ячейка без ведущих нулей. У строк нет FK на существующие места, нет управления пустыми/отключёнными местами. RETURN только взявшим сотрудником. Детальный клиент ТСД/offline вне этапа. Device code — необязательная серверная метка, без справочника устройств. POST/PATCH изменения требуют Idempotency-Key, lookup read-only без ключа. Четыре domain таблицы плюс техническая idempotency_requests. Authentication provider и источник сотрудников ещё не подтверждены. Этот YAML встроен в новый MVP backend. Локальный режим использует явно заданный Bearer test token."
 "servers":
   -
     "url": "/api/v1"
-    "description": "Тот же origin, что и будущий Swagger UI"
+    "description": "Тот же origin, что и Swagger UI"
 "security":
   -
     "ApiBearer": []
@@ -75,7 +75,7 @@
       "tags":
         - "Employees"
       "summary": "Создать сотрудника"
-      "description": "Не выполняется автоматически после неизвестного скана. Требуется право ведения справочника; source employees требует Q05."
+      "description": "Не выполняется автоматически после неизвестного скана. Требуется право ведения справочника; корпоративный source employees требует Q05; MVP поддерживает тестовый локальный реестр."
       "responses":
         "201":
           "description": "Успешный результат. Replay возвращает первоначальный результат; GET нужен для свежего состояния."
@@ -524,6 +524,7 @@
           "in": "query"
           "schema":
             "type": "string"
+            "pattern": '^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$'
             "minLength": 1
           "description": "Точный текстовый адрес. В batteries — current_location, в operations — source OR destination. Не подтверждает существование места."
     "post":
@@ -531,7 +532,7 @@
       "tags":
         - "Commands"
       "summary": "Зарегистрировать и разместить АКБ"
-      "description": "Атомарный реестр + STORE version=1. destination_location непустая, без крайних пробелов, должна быть свободна по UNIQUE. Формат адреса пока не фиксируется regex. Существование физического места не проверяется справочником. 409 INVENTORY_CODE_EXISTS/LOCATION_OCCUPIED."
+      "description": "Атомарный реестр + STORE version=1. destination_location непустая, без крайних пробелов, должна быть свободна по UNIQUE. Формат адреса: три положительных числа через точку без ведущих нулей. Существование физического места не проверяется справочником. 409 INVENTORY_CODE_EXISTS/LOCATION_OCCUPIED."
       "responses":
         "201":
           "description": "Успешный результат. Replay возвращает первоначальный результат; GET нужен для свежего состояния."
@@ -1122,6 +1123,7 @@
           "in": "query"
           "schema":
             "type": "string"
+            "pattern": '^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$'
             "minLength": 1
           "description": "Точный текстовый адрес. В batteries — current_location, в operations — source OR destination. Не подтверждает существование места."
         -
@@ -1472,6 +1474,7 @@
             - "ISSUED"
         "current_location":
           "type": "string"
+          "pattern": '^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$'
           "nullable": true
           "minLength": 1
         "current_holder_employee_id":
@@ -1540,10 +1543,12 @@
             - "ISSUED"
         "source_location":
           "type": "string"
+          "pattern": '^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$'
           "nullable": true
           "minLength": 1
         "destination_location":
           "type": "string"
+          "pattern": '^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$'
           "nullable": true
           "minLength": 1
         "source_holder_employee_id":
@@ -1697,6 +1702,7 @@
           "minLength": 1
         "destination_location":
           "type": "string"
+          "pattern": '^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$'
           "minLength": 1
       "required":
         - "inventory_code"
@@ -1715,6 +1721,7 @@
           "minimum": 1
         "observed_source_location":
           "type": "string"
+          "pattern": '^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$'
           "minLength": 1
       "required":
         - "actor_credential_value"
@@ -1728,6 +1735,7 @@
           "minLength": 1
         "destination_location":
           "type": "string"
+          "pattern": '^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$'
           "minLength": 1
         "expected_version":
           "type": "integer"
@@ -1746,6 +1754,7 @@
           "minLength": 1
         "destination_location":
           "type": "string"
+          "pattern": '^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$'
           "minLength": 1
         "expected_version":
           "type": "integer"
@@ -1753,6 +1762,7 @@
           "minimum": 1
         "observed_source_location":
           "type": "string"
+          "pattern": '^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$'
           "minLength": 1
       "required":
         - "actor_credential_value"
