@@ -16,7 +16,7 @@ distribution license, NOTICE, and bundled third-party licenses are retained in
 runtime resources are embedded in the Go executable. The external validator is
 disabled and the Content Security Policy restricts network connections to the
 same origin. The canonical OpenAPI source is embedded directly from
-`docs/design/battery-storage-pandora/openapi.yaml`; it is never copied here.
+`docs/design/battery-storage-discovery/openapi.yaml`; it is never copied here.
 
 To update, select a specific published swagger-ui-dist version, verify its npm
 package integrity, replace the listed distribution files and licenses, update

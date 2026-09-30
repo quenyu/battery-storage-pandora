@@ -46,6 +46,6 @@ host all all 127.0.0.1/32 trust
 & (Join-Path $PSScriptRoot 'postgres-start.ps1') -Port $Port
 & (Join-Path $pgRoot 'bin/psql.exe') -X -h 127.0.0.1 -p $Port -U postgres -d postgres -v ON_ERROR_STOP=1 -f (Join-Path $PSScriptRoot 'postgres-init.sql')
 if ($LASTEXITCODE -ne 0) { throw 'Database/role setup failed.' }
-Write-Host "Owner: postgres://pandora_owner@127.0.0.1:${Port}/pandora?sslmode=disable"
-Write-Host "App:   postgres://pandora_app@127.0.0.1:${Port}/pandora?sslmode=disable"
+Write-Host "Owner: postgres://pandora_owner@127.0.0.1:${Port}/pandora_storage?sslmode=disable"
+Write-Host "App:   postgres://pandora_app@127.0.0.1:${Port}/pandora_storage?sslmode=disable"
 Write-Host 'Run migrations as owner, then scripts/postgres-grant.ps1 for each migrated database.'

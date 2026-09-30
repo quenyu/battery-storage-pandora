@@ -1,5 +1,5 @@
 // Run against an already running local Go service:
-//   DEV_API_TOKEN=<same token used by server> node scripts/browser-smoke.cjs
+//   node scripts/browser-smoke.cjs
 // Playwright and a Chromium browser must already be available (optional QA tools).
 // Use BROWSER_CHANNEL=chrome for installed Chrome, or BROWSER_EXECUTABLE for another Chromium.
 // NODE_PATH may point at an existing installation of Playwright; no frontend build is needed.
@@ -10,9 +10,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 
 async function main() {
-  const base = (process.env.BASE_URL || 'http://127.0.0.1:8080').replace(/\/$/, '');
-  const token = process.env.DEV_API_TOKEN;
-  assert.ok(token, 'DEV_API_TOKEN must match the local server development token');
+  const base = (process.env.BASE_URL || 'http://127.0.0.1:18080').replace(/\/$/, '');
   assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(new URL(base).hostname), 'Run only against a local server');
   const output = path.resolve(process.env.BROWSER_EVIDENCE_DIR || '.local/browser-evidence');
   await fs.mkdir(output, { recursive: true });
@@ -57,7 +55,10 @@ async function main() {
     assert.equal(await page.locator('.model-container').count(), 20);
     assert.equal(await page.locator('.errors-wrapper').count(), 0);
     evidence.checks.push('308 canonical redirect, 19 operations, 20 schemas, exact authoritative OpenAPI');
-    await page.screenshot({ path: path.join(output, 'swagger-offline.png'), fullPage: true });
+    assert.equal(await page.getByRole('button', { name: 'Authorize', exact: true }).count(), 0, 'Public API must not show an Authorize button');
+    assert.equal((await page.locator('.info .description').allTextContents()).join(''), '', 'Swagger must omit its technical info description');
+    assert.equal(await page.locator('.info .title small:visible').count(), 0, 'Swagger must omit version badges');
+    await page.locator('.info').screenshot({ path: path.join(output, 'swagger-header.png') });
 
     const documented = await page.evaluate(() => {
       const spec = window.ui.specSelectors.specJson().toJS();
@@ -79,18 +80,11 @@ async function main() {
     }
     evidence.checks.push('All 19 operations expanded; every documented success/error response and response example rendered');
 
-    await page.locator('.auth-wrapper').getByRole('button', { name: 'Authorize', exact: true }).click();
-    const dialog = page.locator('.dialog-ux');
-    await dialog.locator('input').fill(token);
-    await dialog.getByRole('button', { name: 'Apply credentials', exact: true }).click();
-    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-    evidence.checks.push('Local bearer token entered through Swagger Authorize');
-
     const create = page.locator('.opblock[id$="-createEmployee"]');
     await create.locator('.opblock-summary-control').click();
     await create.getByRole('button', { name: 'Try it out', exact: true }).waitFor();
     assert.ok(await create.getByRole('tab', { name: 'Example Value', exact: true }).count() > 1);
-    for (const status of ['201', '400', '401', '403', '404', '409', '422', '413', '415', '500', '503']) {
+    for (const status of ['201', '400', '404', '409', '422', '413', '415', '500', '503']) {
       assert.ok(await create.getByRole('cell', { name: status, exact: true }).count() > 0, 'Missing documented response ' + status);
     }
     await create.getByRole('button', { name: 'Try it out', exact: true }).click();
@@ -98,37 +92,42 @@ async function main() {
     const body = { display_name: 'Проверка Swagger', personnel_number: 'browser-' + randomUUID() };
     await create.getByRole('textbox', { name: 'Idempotency-Key', exact: true }).fill(key);
     await create.locator('textarea').fill(JSON.stringify(body, null, 2));
-    const execute = async () => {
-      const pending = page.waitForResponse(response => response.url() === base + '/api/v1/employees' && response.request().method() === 'POST');
+    const execute = async (expectReplay = false) => {
+      const pending = page.waitForResponse(response => response.url() === base + '/api/employees' && response.request().method() === 'POST');
       await create.getByRole('button', { name: 'Execute', exact: true }).click();
       const response = await pending;
       assert.equal(response.status(), 201);
       assert.equal(response.request().headers()['idempotency-key'], key);
-      assert.equal(response.request().headers().authorization, 'Bearer ' + token);
+      assert.equal(response.request().headers().authorization, undefined);
       assert.deepEqual(response.request().postDataJSON(), body);
+      if (expectReplay) assert.equal(response.headers()['idempotency-replayed'], 'true');
       return response.json();
     };
     const first = await execute();
-    const replay = await execute();
+    const replay = await execute(true);
     assert.deepEqual(replay, first);
     evidence.employeeId = first.id;
     evidence.idempotencyKey = key;
     evidence.personnelNumber = body.personnel_number;
     evidence.checks.push('Try it out POST manually supplied header/JSON; repeat 201 with identical response and employee ID');
-    // Swagger's generated curl example includes Authorization. Mask that block
-    // in saved evidence; tokens are never included in results.json either.
-    await create.screenshot({ path: path.join(output, 'swagger-create-replay.png'), mask: [create.locator('.curl-command')] });
+    const requestURL = create.locator('.request-url');
+    const live = create.locator('.live-responses-table');
+    await live.waitFor();
+    await requestURL.evaluate(element => window.scrollTo(0, window.scrollY + element.getBoundingClientRect().top - 35));
+    const bounds = await create.boundingBox();
+    const top = await requestURL.boundingBox();
+    const bottom = await live.boundingBox();
+    await page.screenshot({ path: path.join(output, 'swagger-result.png'), clip: { x: bounds.x, y: top.y, width: bounds.width, height: bottom.y + bottom.height - top.y } });
 
     const read = page.locator('.opblock[id$="-getEmployee"]');
     await read.locator('.opblock-summary-control').click();
     await read.getByRole('button', { name: 'Try it out', exact: true }).click();
     await read.getByRole('textbox', { name: 'employee_id', exact: true }).fill(first.id);
-    const pendingRead = page.waitForResponse(response => response.url() === base + '/api/v1/employees/' + first.id);
+    const pendingRead = page.waitForResponse(response => response.url() === base + '/api/employees/' + first.id);
     await read.getByRole('button', { name: 'Execute', exact: true }).click();
     const readResponse = await pendingRead;
     assert.equal(readResponse.status(), 200);
     assert.deepEqual(await readResponse.json(), first);
-    await read.screenshot({ path: path.join(output, 'swagger-read.png'), mask: [read.locator('.curl-command')] });
     evidence.checks.push('Try it out GET employee returns persisted record');
 
     const credentialValue = 'browser-card-' + randomUUID();
@@ -138,7 +137,7 @@ async function main() {
     await card.getByRole('textbox', { name: 'employee_id', exact: true }).fill(first.id);
     await card.getByRole('textbox', { name: 'Idempotency-Key', exact: true }).fill(randomUUID());
     await card.locator('textarea').fill(JSON.stringify({ value: credentialValue }));
-    const pendingCard = page.waitForResponse(response => response.url() === base + '/api/v1/employees/' + first.id + '/credentials' && response.request().method() === 'POST');
+    const pendingCard = page.waitForResponse(response => response.url() === base + '/api/employees/' + first.id + '/credentials' && response.request().method() === 'POST');
     await card.getByRole('button', { name: 'Execute', exact: true }).click();
     assert.equal((await pendingCard).status(), 201);
     const address = (Number.parseInt(randomUUID().slice(0, 8), 16) + 1) + '.1.1';
@@ -147,7 +146,7 @@ async function main() {
     await store.getByRole('button', { name: 'Try it out', exact: true }).click();
     await store.getByRole('textbox', { name: 'Idempotency-Key', exact: true }).fill(randomUUID());
     await store.locator('textarea').fill(JSON.stringify({ inventory_code: 'browser-battery-' + randomUUID(), actor_credential_value: credentialValue, destination_location: address }));
-    const pendingStore = page.waitForResponse(response => response.url() === base + '/api/v1/batteries' && response.request().method() === 'POST');
+    const pendingStore = page.waitForResponse(response => response.url() === base + '/api/batteries' && response.request().method() === 'POST');
     await store.getByRole('button', { name: 'Execute', exact: true }).click();
     const storeResponse = await pendingStore;
     assert.equal(storeResponse.status(), 201);
@@ -158,7 +157,6 @@ async function main() {
     evidence.batteryId = stored.battery.id;
     evidence.location = address;
     evidence.checks.push('Try it out creates a separate credential and STORE at a canonical numeric address');
-    await store.screenshot({ path: path.join(output, 'swagger-store.png'), mask: [store.locator('.curl-command')] });
     assert.deepEqual(errors, []);
     assert.equal(evidence.externalRequestsBlocked.length, 1, 'Swagger attempted to load an external resource');
     assert.ok(evidence.requests.every(request => new URL(request.url).origin === new URL(base).origin));

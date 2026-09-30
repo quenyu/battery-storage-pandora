@@ -1,6 +1,6 @@
 param(
     [ValidateRange(1024,65535)][int]$Port = 55432,
-    [ValidateSet('pandora', 'pandora_test', 'pandora_mvp_demo')][string]$Database = 'pandora'
+    [ValidateSet('pandora', 'pandora_test', 'pandora_storage')][string]$Database = 'pandora_storage'
 )
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot

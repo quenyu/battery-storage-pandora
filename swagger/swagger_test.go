@@ -68,7 +68,7 @@ func TestEmbeddedContractIsAuthoritativeSource(t *testing.T) {
 	if !bytes.Equal(source, assets.OpenAPI) {
 		t.Fatal("embedded contract differs from authoritative design source")
 	}
-	if !bytes.Contains(assets.OpenAPI, []byte(`"url": "/api/v1"`)) {
+	if !bytes.Contains(assets.OpenAPI, []byte(`url: /api`)) {
 		t.Fatal("Try it out must use the same-origin API")
 	}
 }

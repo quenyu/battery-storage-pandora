@@ -50,7 +50,7 @@ func TestReadFiltersValidateContract(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := httptest.NewRequest("GET", "/api/v1/batteries", nil)
+			r := httptest.NewRequest("GET", "/api/batteries", nil)
 			r.URL.RawQuery = tt.query
 			f, err := parseFilters(r, tt.allowed)
 			if tt.status == 0 {
@@ -70,7 +70,7 @@ func TestReadFiltersValidateContract(t *testing.T) {
 }
 
 func TestCursorBindsEndpointAndNormalizedFilters(t *testing.T) {
-	path := "/api/v1/operations"
+	path := "/api/operations"
 	q := url.Values{"battery_id": {readTestID}, "from": {"2026-09-30T12:00:00Z"}, "type": {"TAKE"}, "limit": {"1"}}
 	r := httptest.NewRequest("GET", path+"?"+q.Encode(), nil)
 	f, err := parseFilters(r, "battery_id from type")
@@ -86,7 +86,7 @@ func TestCursorBindsEndpointAndNormalizedFilters(t *testing.T) {
 	if _, err = parseFilters(httptest.NewRequest("GET", path+"?"+q.Encode(), nil), "battery_id from type"); err != nil {
 		t.Fatal(err)
 	}
-	for _, changed := range []struct{ path, key, value string }{{path, "type", "MOVE"}, {path, "from", "2026-09-30T11:00:00Z"}, {"/api/v1/employees/" + readTestID + "/operations", "type", "TAKE"}} {
+	for _, changed := range []struct{ path, key, value string }{{path, "type", "MOVE"}, {path, "from", "2026-09-30T11:00:00Z"}, {"/api/employees/" + readTestID + "/operations", "type", "TAKE"}} {
 		copyQ := url.Values{}
 		for key, value := range q {
 			copyQ[key] = append([]string(nil), value...)
@@ -105,7 +105,7 @@ func signedReadTestCursor(raw string) string {
 }
 
 func TestCursorRejectsMalformedAndMissingFields(t *testing.T) {
-	r := httptest.NewRequest("GET", "/api/v1/employees", nil)
+	r := httptest.NewRequest("GET", "/api/employees", nil)
 	f, err := parseFilters(r, "")
 	if err != nil {
 		t.Fatal(err)
@@ -125,7 +125,7 @@ func TestCursorRejectsMalformedAndMissingFields(t *testing.T) {
 		bad = append(bad, signedReadTestCursor(raw))
 	}
 	for i, token := range bad {
-		r := httptest.NewRequest("GET", "/api/v1/employees?"+url.Values{"cursor": {token}}.Encode(), nil)
+		r := httptest.NewRequest("GET", "/api/employees?"+url.Values{"cursor": {token}}.Encode(), nil)
 		_, err := parseFilters(r, "")
 		if err == nil || classify(err).Status != 400 {
 			t.Fatalf("malformed cursor case %d accepted: %v", i, err)

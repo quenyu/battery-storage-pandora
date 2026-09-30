@@ -1,1825 +1,1630 @@
-# Design draft after manager decision. Endpoint table: architecture.md
-"openapi": "3.0.3"
-"info":
-  "title": "Pandora Battery Storage & Traceability — MVP API v1"
-  "version": "1.1.0"
-  "description": "Обновлённый проект по решению руководителя: шкафы, полки, ячейки отдельными таблицами не ведутся. Адреса — текстовые source_location/destination_location в immutable журнале и current_location в текущей проекции. Одна АКБ на точный канонический адрес; формат адреса: три положительных числа шкаф.полка.ячейка без ведущих нулей. У строк нет FK на существующие места, нет управления пустыми/отключёнными местами. RETURN только взявшим сотрудником. Детальный клиент ТСД/offline вне этапа. Device code — необязательная серверная метка, без справочника устройств. POST/PATCH изменения требуют Idempotency-Key, lookup read-only без ключа. Четыре domain таблицы плюс техническая idempotency_requests. Authentication provider и источник сотрудников ещё не подтверждены. Этот YAML встроен в новый MVP backend. Локальный режим использует явно заданный Bearer test token."
-"servers":
-  -
-    "url": "/api/v1"
-    "description": "Тот же origin, что и Swagger UI"
-"security":
-  -
-    "ApiBearer": []
-"tags":
-  -
-    "name": "Employees"
-  -
-    "name": "Batteries"
-  -
-    "name": "Commands"
-  -
-    "name": "History"
-"paths":
-  "/employees":
-    "get":
-      "operationId": "listEmployees"
-      "tags":
-        - "Employees"
-      "summary": "Список сотрудников"
-      "description": "Список сотрудников"
-      "responses":
-        "200":
-          "description": "Успешное чтение."
-          "content":
-            "application/json":
-              "schema":
-                "$ref": "#/components/schemas/EmployeePage"
-              "example":
-                "items":
-                  -
-                    "id": "00000000-0000-4000-8000-000000000137"
-                    "is_active": true
-                    "created_at": "2026-09-30T09:14:00Z"
-                    "updated_at": "2026-09-30T09:14:00Z"
-                    "disabled_at": null
-                    "display_name": "Иван Петров"
-                    "personnel_number": "004281"
-                "next_cursor": null
-        "400":
-          "$ref": "#/components/responses/Error400"
-        "401":
-          "$ref": "#/components/responses/Error401"
-        "403":
-          "$ref": "#/components/responses/Error403"
-        "404":
-          "$ref": "#/components/responses/Error404"
-        "422":
-          "$ref": "#/components/responses/Error422"
-        "500":
-          "$ref": "#/components/responses/Error500"
-        "503":
-          "$ref": "#/components/responses/Error503"
-      "parameters":
-        -
-          "$ref": "#/components/parameters/Limit"
-        -
-          "$ref": "#/components/parameters/Cursor"
-        -
-          "name": "is_active"
-          "in": "query"
-          "schema":
-            "type": "boolean"
-    "post":
-      "operationId": "createEmployee"
-      "tags":
-        - "Employees"
-      "summary": "Создать сотрудника"
-      "description": "Не выполняется автоматически после неизвестного скана. Требуется право ведения справочника; корпоративный source employees требует Q05; MVP поддерживает тестовый локальный реестр."
-      "responses":
-        "201":
-          "description": "Успешный результат. Replay возвращает первоначальный результат; GET нужен для свежего состояния."
-          "content":
-            "application/json":
-              "schema":
-                "$ref": "#/components/schemas/Employee"
-              "example":
-                "id": "00000000-0000-4000-8000-000000000137"
-                "is_active": true
-                "created_at": "2026-09-30T09:14:00Z"
-                "updated_at": "2026-09-30T09:14:00Z"
-                "disabled_at": null
-                "display_name": "Иван Петров"
-                "personnel_number": "004281"
-          "headers":
-            "Idempotency-Replayed":
-              "description": "true при возврате сохранённого результата"
-              "schema":
-                "type": "boolean"
-            "Location":
-              "description": "URL созданного ресурса или /api/v1/operations/{operation_id} для движения"
-              "schema":
-                "type": "string"
-        "400":
-          "$ref": "#/components/responses/Error400"
-        "401":
-          "$ref": "#/components/responses/Error401"
-        "403":
-          "$ref": "#/components/responses/Error403"
-        "404":
-          "$ref": "#/components/responses/Error404"
-        "422":
-          "$ref": "#/components/responses/Error422"
-        "500":
-          "$ref": "#/components/responses/Error500"
-        "503":
-          "$ref": "#/components/responses/Error503"
-        "409":
-          "$ref": "#/components/responses/Error409"
-        "413":
-          "$ref": "#/components/responses/Error413"
-        "415":
-          "$ref": "#/components/responses/Error415"
-      "parameters":
-        -
-          "$ref": "#/components/parameters/IdempotencyKey"
-      "requestBody":
-        "required": true
-        "content":
-          "application/json":
-            "schema":
-              "$ref": "#/components/schemas/CreateEmployee"
-            "example":
-              "display_name": "Иван Петров"
-              "personnel_number": "004281"
-  "/employees/{employee_id}":
-    "get":
-      "operationId": "getEmployee"
-      "tags":
-        - "Employees"
-      "summary": "Сотрудник по ID"
-      "description": "Сотрудник по ID"
-      "responses":
-        "200":
-          "description": "Успешное чтение."
-          "content":
-            "application/json":
-              "schema":
-                "$ref": "#/components/schemas/Employee"
-              "example":
-                "id": "00000000-0000-4000-8000-000000000137"
-                "is_active": true
-                "created_at": "2026-09-30T09:14:00Z"
-                "updated_at": "2026-09-30T09:14:00Z"
-                "disabled_at": null
-                "display_name": "Иван Петров"
-                "personnel_number": "004281"
-        "400":
-          "$ref": "#/components/responses/Error400"
-        "401":
-          "$ref": "#/components/responses/Error401"
-        "403":
-          "$ref": "#/components/responses/Error403"
-        "404":
-          "$ref": "#/components/responses/Error404"
-        "422":
-          "$ref": "#/components/responses/Error422"
-        "500":
-          "$ref": "#/components/responses/Error500"
-        "503":
-          "$ref": "#/components/responses/Error503"
-      "parameters":
-        -
-          "$ref": "#/components/parameters/employee_id"
-    "patch":
-      "operationId": "patchEmployee"
-      "tags":
-        - "Employees"
-      "summary": "Изменить имя или активность"
-      "description": "Нельзя изменить ID. Предлагается запрещать отключение с выданными АКБ: 409 EMPLOYEE_HAS_CUSTODY."
-      "responses":
-        "200":
-          "description": "Успешный результат. Replay возвращает первоначальный результат; GET нужен для свежего состояния."
-          "content":
-            "application/json":
-              "schema":
-                "$ref": "#/components/schemas/Employee"
-              "example":
-                "id": "00000000-0000-4000-8000-000000000137"
-                "is_active": true
-                "created_at": "2026-09-30T09:14:00Z"
-                "updated_at": "2026-09-30T09:14:00Z"
-                "disabled_at": null
-                "display_name": "Иван Петров"
-                "personnel_number": "004281"
-          "headers":
-            "Idempotency-Replayed":
-              "description": "true при возврате сохранённого результата"
-              "schema":
-                "type": "boolean"
-        "400":
-          "$ref": "#/components/responses/Error400"
-        "401":
-          "$ref": "#/components/responses/Error401"
-        "403":
-          "$ref": "#/components/responses/Error403"
-        "404":
-          "$ref": "#/components/responses/Error404"
-        "422":
-          "$ref": "#/components/responses/Error422"
-        "500":
-          "$ref": "#/components/responses/Error500"
-        "503":
-          "$ref": "#/components/responses/Error503"
-        "409":
-          "$ref": "#/components/responses/Error409"
-        "413":
-          "$ref": "#/components/responses/Error413"
-        "415":
-          "$ref": "#/components/responses/Error415"
-      "parameters":
-        -
-          "$ref": "#/components/parameters/employee_id"
-        -
-          "$ref": "#/components/parameters/IdempotencyKey"
-      "requestBody":
-        "required": true
-        "content":
-          "application/json":
-            "schema":
-              "$ref": "#/components/schemas/PatchEmployee"
-            "example":
-              "is_active": false
-  "/credential-resolutions":
-    "post":
-      "operationId": "resolveCredential"
-      "tags":
-        - "Employees"
-      "summary": "Найти человека по активному credential"
-      "description": "Read-only POST ради отсутствия credential в URL. Не создаёт сотрудника, не требует Idempotency-Key. Credential не аутентифицирует API-клиента."
-      "responses":
-        "200":
-          "description": "Успешное чтение."
-          "content":
-            "application/json":
-              "schema":
-                "$ref": "#/components/schemas/CredentialResolution"
-              "example":
-                "employee":
-                  "id": "00000000-0000-4000-8000-000000000137"
-                  "is_active": true
-                  "created_at": "2026-09-30T09:14:00Z"
-                  "updated_at": "2026-09-30T09:14:00Z"
-                  "disabled_at": null
-                  "display_name": "Иван Петров"
-                  "personnel_number": "004281"
-                "credential_id": "00000000-0000-4000-8000-000000000138"
-        "400":
-          "$ref": "#/components/responses/Error400"
-        "401":
-          "$ref": "#/components/responses/Error401"
-        "403":
-          "$ref": "#/components/responses/Error403"
-        "404":
-          "$ref": "#/components/responses/Error404"
-        "422":
-          "$ref": "#/components/responses/Error422"
-        "500":
-          "$ref": "#/components/responses/Error500"
-        "503":
-          "$ref": "#/components/responses/Error503"
-        "413":
-          "$ref": "#/components/responses/Error413"
-        "415":
-          "$ref": "#/components/responses/Error415"
-      "requestBody":
-        "required": true
-        "content":
-          "application/json":
-            "schema":
-              "$ref": "#/components/schemas/ResolveCredential"
-            "example":
-              "credential_value": "0004097281923"
-  "/employees/{employee_id}/credentials":
-    "get":
-      "operationId": "listCredentials"
-      "tags":
-        - "Employees"
-      "summary": "Карты сотрудника, включая историю"
-      "description": "Только право ведения справочников; значения credential не публикуются для произвольного читателя."
-      "responses":
-        "200":
-          "description": "Успешное чтение."
-          "content":
-            "application/json":
-              "schema":
-                "$ref": "#/components/schemas/CredentialPage"
-              "example":
-                "items":
-                  -
-                    "id": "00000000-0000-4000-8000-000000000138"
-                    "is_active": true
-                    "created_at": "2026-09-30T09:14:00Z"
-                    "updated_at": "2026-09-30T09:14:00Z"
-                    "disabled_at": null
-                    "employee_id": "00000000-0000-4000-8000-000000000137"
-                    "value": "0004097281923"
-                "next_cursor": null
-        "400":
-          "$ref": "#/components/responses/Error400"
-        "401":
-          "$ref": "#/components/responses/Error401"
-        "403":
-          "$ref": "#/components/responses/Error403"
-        "404":
-          "$ref": "#/components/responses/Error404"
-        "422":
-          "$ref": "#/components/responses/Error422"
-        "500":
-          "$ref": "#/components/responses/Error500"
-        "503":
-          "$ref": "#/components/responses/Error503"
-      "parameters":
-        -
-          "$ref": "#/components/parameters/employee_id"
-        -
-          "$ref": "#/components/parameters/Limit"
-        -
-          "$ref": "#/components/parameters/Cursor"
-    "post":
-      "operationId": "createCredential"
-      "tags":
-        - "Employees"
-      "summary": "Назначить или заменить карту"
-      "description": "Несколько active credential поддерживаются. replaces_credential_id отключает конкретную старую в той же транзакции. 409 ACTIVE_CREDENTIAL_EXISTS/CREDENTIAL_REUSE_UNCONFIRMED."
-      "responses":
-        "201":
-          "description": "Успешный результат. Replay возвращает первоначальный результат; GET нужен для свежего состояния."
-          "content":
-            "application/json":
-              "schema":
-                "$ref": "#/components/schemas/Credential"
-              "example":
-                "id": "00000000-0000-4000-8000-000000000138"
-                "is_active": true
-                "created_at": "2026-09-30T09:14:00Z"
-                "updated_at": "2026-09-30T09:14:00Z"
-                "disabled_at": null
-                "employee_id": "00000000-0000-4000-8000-000000000137"
-                "value": "0004097281923"
-          "headers":
-            "Idempotency-Replayed":
-              "description": "true при возврате сохранённого результата"
-              "schema":
-                "type": "boolean"
-            "Location":
-              "description": "URL созданного ресурса или /api/v1/operations/{operation_id} для движения"
-              "schema":
-                "type": "string"
-        "400":
-          "$ref": "#/components/responses/Error400"
-        "401":
-          "$ref": "#/components/responses/Error401"
-        "403":
-          "$ref": "#/components/responses/Error403"
-        "404":
-          "$ref": "#/components/responses/Error404"
-        "422":
-          "$ref": "#/components/responses/Error422"
-        "500":
-          "$ref": "#/components/responses/Error500"
-        "503":
-          "$ref": "#/components/responses/Error503"
-        "409":
-          "$ref": "#/components/responses/Error409"
-        "413":
-          "$ref": "#/components/responses/Error413"
-        "415":
-          "$ref": "#/components/responses/Error415"
-      "parameters":
-        -
-          "$ref": "#/components/parameters/employee_id"
-        -
-          "$ref": "#/components/parameters/IdempotencyKey"
-      "requestBody":
-        "required": true
-        "content":
-          "application/json":
-            "schema":
-              "$ref": "#/components/schemas/CreateCredential"
-            "example":
-              "value": "0004097281924"
-              "replaces_credential_id": "00000000-0000-4000-8000-000000000138"
-  "/employees/{employee_id}/credentials/{credential_id}":
-    "patch":
-      "operationId": "disableCredential"
-      "tags":
-        - "Employees"
-      "summary": "Деактивировать credential"
-      "description": "Меняется только активность. Value и employee_id неизменяемы. Отключение уже отключённой карты возвращает 200 без изменения исходного disabled_at."
-      "responses":
-        "200":
-          "description": "Успешный результат. Replay возвращает первоначальный результат; GET нужен для свежего состояния."
-          "content":
-            "application/json":
-              "schema":
-                "$ref": "#/components/schemas/Credential"
-              "example":
-                "id": "00000000-0000-4000-8000-000000000138"
-                "is_active": false
-                "created_at": "2026-09-30T09:14:00Z"
-                "updated_at": "2026-09-30T09:14:00Z"
-                "disabled_at": "2026-09-30T09:14:00Z"
-                "employee_id": "00000000-0000-4000-8000-000000000137"
-                "value": "0004097281923"
-          "headers":
-            "Idempotency-Replayed":
-              "description": "true при возврате сохранённого результата"
-              "schema":
-                "type": "boolean"
-        "400":
-          "$ref": "#/components/responses/Error400"
-        "401":
-          "$ref": "#/components/responses/Error401"
-        "403":
-          "$ref": "#/components/responses/Error403"
-        "404":
-          "$ref": "#/components/responses/Error404"
-        "422":
-          "$ref": "#/components/responses/Error422"
-        "500":
-          "$ref": "#/components/responses/Error500"
-        "503":
-          "$ref": "#/components/responses/Error503"
-        "409":
-          "$ref": "#/components/responses/Error409"
-        "413":
-          "$ref": "#/components/responses/Error413"
-        "415":
-          "$ref": "#/components/responses/Error415"
-      "parameters":
-        -
-          "$ref": "#/components/parameters/employee_id"
-        -
-          "$ref": "#/components/parameters/credential_id"
-        -
-          "$ref": "#/components/parameters/IdempotencyKey"
-      "requestBody":
-        "required": true
-        "content":
-          "application/json":
-            "schema":
-              "$ref": "#/components/schemas/DisableCredential"
-            "example":
-              "is_active": false
-  "/batteries":
-    "get":
-      "operationId": "listBatteries"
-      "tags":
-        - "Batteries"
-      "summary": "Поиск и текущие состояния"
-      "description": "Поиск и текущие состояния"
-      "responses":
-        "200":
-          "description": "Успешное чтение."
-          "content":
-            "application/json":
-              "schema":
-                "$ref": "#/components/schemas/BatteryPage"
-              "example":
-                "items":
-                  -
-                    "id": "00000000-0000-4000-8000-000000000412"
-                    "inventory_code": "B-00412"
-                    "serial_number": null
-                    "status": "STORED"
-                    "current_location": "1.1.1"
-                    "current_holder_employee_id": null
-                    "version": 1
-                    "created_at": "2026-09-30T09:14:00Z"
-                    "updated_at": "2026-09-30T09:14:00Z"
-                "next_cursor": null
-        "400":
-          "$ref": "#/components/responses/Error400"
-        "401":
-          "$ref": "#/components/responses/Error401"
-        "403":
-          "$ref": "#/components/responses/Error403"
-        "404":
-          "$ref": "#/components/responses/Error404"
-        "422":
-          "$ref": "#/components/responses/Error422"
-        "500":
-          "$ref": "#/components/responses/Error500"
-        "503":
-          "$ref": "#/components/responses/Error503"
-      "parameters":
-        -
-          "$ref": "#/components/parameters/Limit"
-        -
-          "$ref": "#/components/parameters/Cursor"
-        -
-          "name": "inventory_code"
-          "in": "query"
-          "schema":
-            "type": "string"
-            "minLength": 1
-          "description": "Точное сравнение, 0 или 1 результат; физический формат маркировки неизвестен"
-        -
-          "name": "status"
-          "in": "query"
-          "schema":
-            "type": "string"
-            "enum":
-              - "STORED"
-              - "ISSUED"
-        -
-          "name": "holder_employee_id"
-          "in": "query"
-          "schema":
-            "type": "string"
-            "format": "uuid"
-        -
-          "name": "location"
-          "in": "query"
-          "schema":
-            "type": "string"
-            "pattern": '^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$'
-            "minLength": 1
-          "description": "Точный текстовый адрес. В batteries — current_location, в operations — source OR destination. Не подтверждает существование места."
-    "post":
-      "operationId": "storeNewBattery"
-      "tags":
-        - "Commands"
-      "summary": "Зарегистрировать и разместить АКБ"
-      "description": "Атомарный реестр + STORE version=1. destination_location непустая, без крайних пробелов, должна быть свободна по UNIQUE. Формат адреса: три положительных числа через точку без ведущих нулей. Существование физического места не проверяется справочником. 409 INVENTORY_CODE_EXISTS/LOCATION_OCCUPIED."
-      "responses":
-        "201":
-          "description": "Успешный результат. Replay возвращает первоначальный результат; GET нужен для свежего состояния."
-          "content":
-            "application/json":
-              "schema":
-                "$ref": "#/components/schemas/CommandResult"
-              "example":
-                "battery":
-                  "id": "00000000-0000-4000-8000-000000000412"
-                  "inventory_code": "B-00412"
-                  "serial_number": null
-                  "status": "STORED"
-                  "current_location": "1.1.1"
-                  "current_holder_employee_id": null
-                  "version": 1
-                  "created_at": "2026-09-30T09:14:00Z"
-                  "updated_at": "2026-09-30T09:14:00Z"
-                "operation":
-                  "id": "00000000-0000-4000-8000-000000000901"
-                  "battery_id": "00000000-0000-4000-8000-000000000412"
-                  "battery_version": 1
-                  "type": "STORE"
-                  "actor_employee_id": "00000000-0000-4000-8000-000000000137"
-                  "credential_id": "00000000-0000-4000-8000-000000000138"
-                  "source_status": null
-                  "destination_status": "STORED"
-                  "source_location": null
-                  "destination_location": "1.1.1"
-                  "source_holder_employee_id": null
-                  "destination_holder_employee_id": null
-                  "device_code": "TSD-example"
-                  "occurred_at": "2026-09-30T09:14:00Z"
-          "headers":
-            "Idempotency-Replayed":
-              "description": "true при возврате сохранённого результата"
-              "schema":
-                "type": "boolean"
-            "Location":
-              "description": "URL созданного ресурса или /api/v1/operations/{operation_id} для движения"
-              "schema":
-                "type": "string"
-        "400":
-          "$ref": "#/components/responses/Error400"
-        "401":
-          "$ref": "#/components/responses/Error401"
-        "403":
-          "$ref": "#/components/responses/Error403"
-        "404":
-          "$ref": "#/components/responses/Error404"
-        "422":
-          "$ref": "#/components/responses/Error422"
-        "500":
-          "$ref": "#/components/responses/Error500"
-        "503":
-          "$ref": "#/components/responses/Error503"
-        "409":
-          "$ref": "#/components/responses/Error409"
-        "413":
-          "$ref": "#/components/responses/Error413"
-        "415":
-          "$ref": "#/components/responses/Error415"
-      "parameters":
-        -
-          "$ref": "#/components/parameters/IdempotencyKey"
-      "requestBody":
-        "required": true
-        "content":
-          "application/json":
-            "schema":
-              "$ref": "#/components/schemas/StoreBattery"
-            "example":
-              "inventory_code": "B-00412"
-              "actor_credential_value": "0004097281923"
-              "destination_location": "1.1.1"
-  "/batteries/{battery_id}":
-    "get":
-      "operationId": "getBattery"
-      "tags":
-        - "Batteries"
-      "summary": "Текущее состояние АКБ"
-      "description": "Текущее состояние АКБ"
-      "responses":
-        "200":
-          "description": "Успешное чтение."
-          "content":
-            "application/json":
-              "schema":
-                "$ref": "#/components/schemas/Battery"
-              "example":
-                "id": "00000000-0000-4000-8000-000000000412"
-                "inventory_code": "B-00412"
-                "serial_number": null
-                "status": "STORED"
-                "current_location": "1.1.1"
-                "current_holder_employee_id": null
-                "version": 1
-                "created_at": "2026-09-30T09:14:00Z"
-                "updated_at": "2026-09-30T09:14:00Z"
-        "400":
-          "$ref": "#/components/responses/Error400"
-        "401":
-          "$ref": "#/components/responses/Error401"
-        "403":
-          "$ref": "#/components/responses/Error403"
-        "404":
-          "$ref": "#/components/responses/Error404"
-        "422":
-          "$ref": "#/components/responses/Error422"
-        "500":
-          "$ref": "#/components/responses/Error500"
-        "503":
-          "$ref": "#/components/responses/Error503"
-      "parameters":
-        -
-          "$ref": "#/components/parameters/battery_id"
-  "/batteries/{battery_id}/take":
-    "post":
-      "operationId": "takeBattery"
-      "tags":
-        - "Commands"
-      "summary": "Выдать АКБ сотруднику"
-      "description": "Только STORED. Серверный source сохраняется текстом. 409 BATTERY_ALREADY_ISSUED/INVALID_BATTERY_STATE/SOURCE_MISMATCH/STATE_VERSION_MISMATCH."
-      "responses":
-        "201":
-          "description": "Успешный результат. Replay возвращает первоначальный результат; GET нужен для свежего состояния."
-          "content":
-            "application/json":
-              "schema":
-                "$ref": "#/components/schemas/CommandResult"
-              "example":
-                "battery":
-                  "id": "00000000-0000-4000-8000-000000000412"
-                  "inventory_code": "B-00412"
-                  "serial_number": null
-                  "status": "ISSUED"
-                  "current_location": null
-                  "current_holder_employee_id": "00000000-0000-4000-8000-000000000137"
-                  "version": 2
-                  "created_at": "2026-09-30T09:14:00Z"
-                  "updated_at": "2026-09-30T11:26:00Z"
-                "operation":
-                  "id": "00000000-0000-4000-8000-000000000902"
-                  "battery_id": "00000000-0000-4000-8000-000000000412"
-                  "battery_version": 2
-                  "type": "TAKE"
-                  "actor_employee_id": "00000000-0000-4000-8000-000000000137"
-                  "credential_id": "00000000-0000-4000-8000-000000000138"
-                  "source_status": "STORED"
-                  "destination_status": "ISSUED"
-                  "source_location": "1.1.1"
-                  "destination_location": null
-                  "source_holder_employee_id": null
-                  "destination_holder_employee_id": "00000000-0000-4000-8000-000000000137"
-                  "device_code": "TSD-example"
-                  "occurred_at": "2026-09-30T11:26:00Z"
-          "headers":
-            "Idempotency-Replayed":
-              "description": "true при возврате сохранённого результата"
-              "schema":
-                "type": "boolean"
-            "Location":
-              "description": "URL созданного ресурса или /api/v1/operations/{operation_id} для движения"
-              "schema":
-                "type": "string"
-        "400":
-          "$ref": "#/components/responses/Error400"
-        "401":
-          "$ref": "#/components/responses/Error401"
-        "403":
-          "$ref": "#/components/responses/Error403"
-        "404":
-          "$ref": "#/components/responses/Error404"
-        "422":
-          "$ref": "#/components/responses/Error422"
-        "500":
-          "$ref": "#/components/responses/Error500"
-        "503":
-          "$ref": "#/components/responses/Error503"
-        "409":
-          "$ref": "#/components/responses/Error409"
-        "413":
-          "$ref": "#/components/responses/Error413"
-        "415":
-          "$ref": "#/components/responses/Error415"
-      "parameters":
-        -
-          "$ref": "#/components/parameters/battery_id"
-        -
-          "$ref": "#/components/parameters/IdempotencyKey"
-      "requestBody":
-        "required": true
-        "content":
-          "application/json":
-            "schema":
-              "$ref": "#/components/schemas/TakeBattery"
-            "example":
-              "actor_credential_value": "0004097281923"
-              "expected_version": 1
-  "/batteries/{battery_id}/return":
-    "post":
-      "operationId": "returnBattery"
-      "tags":
-        - "Commands"
-      "summary": "Вернуть выданную АКБ"
-      "description": "Только ISSUED, actor=current_holder; другому 403 RETURN_NOT_ALLOWED. Смена карты того же employee не мешает возврату. Destination — текстовый адрес; 409 INVALID_BATTERY_STATE/STATE_VERSION_MISMATCH/LOCATION_OCCUPIED."
-      "responses":
-        "201":
-          "description": "Успешный результат. Replay возвращает первоначальный результат; GET нужен для свежего состояния."
-          "content":
-            "application/json":
-              "schema":
-                "$ref": "#/components/schemas/CommandResult"
-              "example":
-                "battery":
-                  "id": "00000000-0000-4000-8000-000000000412"
-                  "inventory_code": "B-00412"
-                  "serial_number": null
-                  "status": "STORED"
-                  "current_location": "1.2.4"
-                  "current_holder_employee_id": null
-                  "version": 3
-                  "created_at": "2026-09-30T09:14:00Z"
-                  "updated_at": "2026-09-30T11:26:00Z"
-                "operation":
-                  "id": "00000000-0000-4000-8000-000000000903"
-                  "battery_id": "00000000-0000-4000-8000-000000000412"
-                  "battery_version": 3
-                  "type": "RETURN"
-                  "actor_employee_id": "00000000-0000-4000-8000-000000000137"
-                  "credential_id": "00000000-0000-4000-8000-000000000138"
-                  "source_status": "ISSUED"
-                  "destination_status": "STORED"
-                  "source_location": null
-                  "destination_location": "1.2.4"
-                  "source_holder_employee_id": "00000000-0000-4000-8000-000000000137"
-                  "destination_holder_employee_id": null
-                  "device_code": "TSD-example"
-                  "occurred_at": "2026-09-30T11:26:00Z"
-          "headers":
-            "Idempotency-Replayed":
-              "description": "true при возврате сохранённого результата"
-              "schema":
-                "type": "boolean"
-            "Location":
-              "description": "URL созданного ресурса или /api/v1/operations/{operation_id} для движения"
-              "schema":
-                "type": "string"
-        "400":
-          "$ref": "#/components/responses/Error400"
-        "401":
-          "$ref": "#/components/responses/Error401"
-        "403":
-          "$ref": "#/components/responses/Error403"
-        "404":
-          "$ref": "#/components/responses/Error404"
-        "422":
-          "$ref": "#/components/responses/Error422"
-        "500":
-          "$ref": "#/components/responses/Error500"
-        "503":
-          "$ref": "#/components/responses/Error503"
-        "409":
-          "$ref": "#/components/responses/Error409"
-        "413":
-          "$ref": "#/components/responses/Error413"
-        "415":
-          "$ref": "#/components/responses/Error415"
-      "parameters":
-        -
-          "$ref": "#/components/parameters/battery_id"
-        -
-          "$ref": "#/components/parameters/IdempotencyKey"
-      "requestBody":
-        "required": true
-        "content":
-          "application/json":
-            "schema":
-              "$ref": "#/components/schemas/ReturnBattery"
-            "example":
-              "actor_credential_value": "0004097281923"
-              "destination_location": "1.2.4"
-              "expected_version": 2
-  "/batteries/{battery_id}/move":
-    "post":
-      "operationId": "moveBattery"
-      "tags":
-        - "Commands"
-      "summary": "Переместить между ячейками"
-      "description": "Только STORED; destination отличается от server current_location. Оба адреса сохранены текстом. 409 SAME_LOCATION/INVALID_BATTERY_STATE/SOURCE_MISMATCH/STATE_VERSION_MISMATCH/LOCATION_OCCUPIED."
-      "responses":
-        "201":
-          "description": "Успешный результат. Replay возвращает первоначальный результат; GET нужен для свежего состояния."
-          "content":
-            "application/json":
-              "schema":
-                "$ref": "#/components/schemas/CommandResult"
-              "example":
-                "battery":
-                  "id": "00000000-0000-4000-8000-000000000412"
-                  "inventory_code": "B-00412"
-                  "serial_number": null
-                  "status": "STORED"
-                  "current_location": "2.1.2"
-                  "current_holder_employee_id": null
-                  "version": 4
-                  "created_at": "2026-09-30T09:14:00Z"
-                  "updated_at": "2026-09-30T11:26:00Z"
-                "operation":
-                  "id": "00000000-0000-4000-8000-000000000904"
-                  "battery_id": "00000000-0000-4000-8000-000000000412"
-                  "battery_version": 4
-                  "type": "MOVE"
-                  "actor_employee_id": "00000000-0000-4000-8000-000000000137"
-                  "credential_id": "00000000-0000-4000-8000-000000000138"
-                  "source_status": "STORED"
-                  "destination_status": "STORED"
-                  "source_location": "1.2.4"
-                  "destination_location": "2.1.2"
-                  "source_holder_employee_id": null
-                  "destination_holder_employee_id": null
-                  "device_code": "TSD-example"
-                  "occurred_at": "2026-09-30T11:26:00Z"
-          "headers":
-            "Idempotency-Replayed":
-              "description": "true при возврате сохранённого результата"
-              "schema":
-                "type": "boolean"
-            "Location":
-              "description": "URL созданного ресурса или /api/v1/operations/{operation_id} для движения"
-              "schema":
-                "type": "string"
-        "400":
-          "$ref": "#/components/responses/Error400"
-        "401":
-          "$ref": "#/components/responses/Error401"
-        "403":
-          "$ref": "#/components/responses/Error403"
-        "404":
-          "$ref": "#/components/responses/Error404"
-        "422":
-          "$ref": "#/components/responses/Error422"
-        "500":
-          "$ref": "#/components/responses/Error500"
-        "503":
-          "$ref": "#/components/responses/Error503"
-        "409":
-          "$ref": "#/components/responses/Error409"
-        "413":
-          "$ref": "#/components/responses/Error413"
-        "415":
-          "$ref": "#/components/responses/Error415"
-      "parameters":
-        -
-          "$ref": "#/components/parameters/battery_id"
-        -
-          "$ref": "#/components/parameters/IdempotencyKey"
-      "requestBody":
-        "required": true
-        "content":
-          "application/json":
-            "schema":
-              "$ref": "#/components/schemas/MoveBattery"
-            "example":
-              "actor_credential_value": "0004097281923"
-              "destination_location": "2.1.2"
-              "expected_version": 3
-              "observed_source_location": "1.2.4"
-  "/batteries/{battery_id}/operations":
-    "get":
-      "operationId": "listBatteryOperations"
-      "tags":
-        - "History"
-      "summary": "История АКБ по версии"
-      "description": "История АКБ по версии"
-      "responses":
-        "200":
-          "description": "Успешное чтение."
-          "content":
-            "application/json":
-              "schema":
-                "$ref": "#/components/schemas/OperationPage"
-              "example":
-                "items":
-                  -
-                    "id": "00000000-0000-4000-8000-000000000901"
-                    "battery_id": "00000000-0000-4000-8000-000000000412"
-                    "battery_version": 1
-                    "type": "STORE"
-                    "actor_employee_id": "00000000-0000-4000-8000-000000000137"
-                    "credential_id": "00000000-0000-4000-8000-000000000138"
-                    "source_status": null
-                    "destination_status": "STORED"
-                    "source_location": null
-                    "destination_location": "1.1.1"
-                    "source_holder_employee_id": null
-                    "destination_holder_employee_id": null
-                    "device_code": "TSD-example"
-                    "occurred_at": "2026-09-30T09:14:00Z"
-                "next_cursor": null
-        "400":
-          "$ref": "#/components/responses/Error400"
-        "401":
-          "$ref": "#/components/responses/Error401"
-        "403":
-          "$ref": "#/components/responses/Error403"
-        "404":
-          "$ref": "#/components/responses/Error404"
-        "422":
-          "$ref": "#/components/responses/Error422"
-        "500":
-          "$ref": "#/components/responses/Error500"
-        "503":
-          "$ref": "#/components/responses/Error503"
-      "parameters":
-        -
-          "$ref": "#/components/parameters/battery_id"
-        -
-          "$ref": "#/components/parameters/Limit"
-        -
-          "$ref": "#/components/parameters/Cursor"
-  "/employees/{employee_id}/batteries":
-    "get":
-      "operationId": "listEmployeeBatteries"
-      "tags":
-        - "Batteries"
-      "summary": "АКБ у сотрудника сейчас"
-      "description": "АКБ у сотрудника сейчас"
-      "responses":
-        "200":
-          "description": "Успешное чтение."
-          "content":
-            "application/json":
-              "schema":
-                "$ref": "#/components/schemas/BatteryPage"
-              "example":
-                "items":
-                  -
-                    "id": "00000000-0000-4000-8000-000000000412"
-                    "inventory_code": "B-00412"
-                    "serial_number": null
-                    "status": "STORED"
-                    "current_location": "1.1.1"
-                    "current_holder_employee_id": null
-                    "version": 1
-                    "created_at": "2026-09-30T09:14:00Z"
-                    "updated_at": "2026-09-30T09:14:00Z"
-                "next_cursor": null
-        "400":
-          "$ref": "#/components/responses/Error400"
-        "401":
-          "$ref": "#/components/responses/Error401"
-        "403":
-          "$ref": "#/components/responses/Error403"
-        "404":
-          "$ref": "#/components/responses/Error404"
-        "422":
-          "$ref": "#/components/responses/Error422"
-        "500":
-          "$ref": "#/components/responses/Error500"
-        "503":
-          "$ref": "#/components/responses/Error503"
-      "parameters":
-        -
-          "$ref": "#/components/parameters/employee_id"
-        -
-          "$ref": "#/components/parameters/Limit"
-        -
-          "$ref": "#/components/parameters/Cursor"
-  "/employees/{employee_id}/operations":
-    "get":
-      "operationId": "listEmployeeOperations"
-      "tags":
-        - "History"
-      "summary": "История участия сотрудника"
-      "description": "Actor OR source_holder OR destination_holder, без дубликатов."
-      "responses":
-        "200":
-          "description": "Успешное чтение."
-          "content":
-            "application/json":
-              "schema":
-                "$ref": "#/components/schemas/OperationPage"
-              "example":
-                "items":
-                  -
-                    "id": "00000000-0000-4000-8000-000000000901"
-                    "battery_id": "00000000-0000-4000-8000-000000000412"
-                    "battery_version": 1
-                    "type": "STORE"
-                    "actor_employee_id": "00000000-0000-4000-8000-000000000137"
-                    "credential_id": "00000000-0000-4000-8000-000000000138"
-                    "source_status": null
-                    "destination_status": "STORED"
-                    "source_location": null
-                    "destination_location": "1.1.1"
-                    "source_holder_employee_id": null
-                    "destination_holder_employee_id": null
-                    "device_code": "TSD-example"
-                    "occurred_at": "2026-09-30T09:14:00Z"
-                "next_cursor": null
-        "400":
-          "$ref": "#/components/responses/Error400"
-        "401":
-          "$ref": "#/components/responses/Error401"
-        "403":
-          "$ref": "#/components/responses/Error403"
-        "404":
-          "$ref": "#/components/responses/Error404"
-        "422":
-          "$ref": "#/components/responses/Error422"
-        "500":
-          "$ref": "#/components/responses/Error500"
-        "503":
-          "$ref": "#/components/responses/Error503"
-      "parameters":
-        -
-          "$ref": "#/components/parameters/employee_id"
-        -
-          "$ref": "#/components/parameters/Limit"
-        -
-          "$ref": "#/components/parameters/Cursor"
-  "/operations":
-    "get":
-      "operationId": "listOperations"
-      "tags":
-        - "History"
-      "summary": "Общий журнал и фильтры"
-      "description": "Общий журнал и фильтры"
-      "responses":
-        "200":
-          "description": "Успешное чтение."
-          "content":
-            "application/json":
-              "schema":
-                "$ref": "#/components/schemas/OperationPage"
-              "example":
-                "items":
-                  -
-                    "id": "00000000-0000-4000-8000-000000000901"
-                    "battery_id": "00000000-0000-4000-8000-000000000412"
-                    "battery_version": 1
-                    "type": "STORE"
-                    "actor_employee_id": "00000000-0000-4000-8000-000000000137"
-                    "credential_id": "00000000-0000-4000-8000-000000000138"
-                    "source_status": null
-                    "destination_status": "STORED"
-                    "source_location": null
-                    "destination_location": "1.1.1"
-                    "source_holder_employee_id": null
-                    "destination_holder_employee_id": null
-                    "device_code": "TSD-example"
-                    "occurred_at": "2026-09-30T09:14:00Z"
-                "next_cursor": null
-        "400":
-          "$ref": "#/components/responses/Error400"
-        "401":
-          "$ref": "#/components/responses/Error401"
-        "403":
-          "$ref": "#/components/responses/Error403"
-        "404":
-          "$ref": "#/components/responses/Error404"
-        "422":
-          "$ref": "#/components/responses/Error422"
-        "500":
-          "$ref": "#/components/responses/Error500"
-        "503":
-          "$ref": "#/components/responses/Error503"
-      "parameters":
-        -
-          "$ref": "#/components/parameters/Limit"
-        -
-          "$ref": "#/components/parameters/Cursor"
-        -
-          "name": "battery_id"
-          "in": "query"
-          "schema":
-            "type": "string"
-            "format": "uuid"
-        -
-          "name": "employee_id"
-          "in": "query"
-          "schema":
-            "type": "string"
-            "format": "uuid"
-        -
-          "name": "location"
-          "in": "query"
-          "schema":
-            "type": "string"
-            "pattern": '^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$'
-            "minLength": 1
-          "description": "Точный текстовый адрес. В batteries — current_location, в operations — source OR destination. Не подтверждает существование места."
-        -
-          "name": "device_code"
-          "in": "query"
-          "schema":
-            "type": "string"
-            "minLength": 1
-          "description": "Необязательная точная метка устройства из истории, без device registry."
-        -
-          "name": "type"
-          "in": "query"
-          "schema":
-            "type": "string"
-            "enum":
-              - "STORE"
-              - "TAKE"
-              - "RETURN"
-              - "MOVE"
-        -
-          "name": "from"
-          "in": "query"
-          "schema":
-            "type": "string"
-            "format": "date-time"
-          "description": "Включительно"
-        -
-          "name": "to"
-          "in": "query"
-          "schema":
-            "type": "string"
-            "format": "date-time"
-          "description": "Исключительно; from >= to даёт 422"
-  "/operations/{operation_id}":
-    "get":
-      "operationId": "getOperation"
-      "tags":
-        - "History"
-      "summary": "Неизменяемая операция"
-      "description": "Неизменяемая операция"
-      "responses":
-        "200":
-          "description": "Успешное чтение."
-          "content":
-            "application/json":
-              "schema":
-                "$ref": "#/components/schemas/Operation"
-              "example":
-                "id": "00000000-0000-4000-8000-000000000901"
-                "battery_id": "00000000-0000-4000-8000-000000000412"
-                "battery_version": 1
-                "type": "STORE"
-                "actor_employee_id": "00000000-0000-4000-8000-000000000137"
-                "credential_id": "00000000-0000-4000-8000-000000000138"
-                "source_status": null
-                "destination_status": "STORED"
-                "source_location": null
-                "destination_location": "1.1.1"
-                "source_holder_employee_id": null
-                "destination_holder_employee_id": null
-                "device_code": "TSD-example"
-                "occurred_at": "2026-09-30T09:14:00Z"
-        "400":
-          "$ref": "#/components/responses/Error400"
-        "401":
-          "$ref": "#/components/responses/Error401"
-        "403":
-          "$ref": "#/components/responses/Error403"
-        "404":
-          "$ref": "#/components/responses/Error404"
-        "422":
-          "$ref": "#/components/responses/Error422"
-        "500":
-          "$ref": "#/components/responses/Error500"
-        "503":
-          "$ref": "#/components/responses/Error503"
-      "parameters":
-        -
-          "$ref": "#/components/parameters/operation_id"
-"components":
-  "securitySchemes":
-    "ApiBearer":
-      "type": "http"
-      "scheme": "bearer"
-      "description": "Предложенный доверенный API principal/сеанс, без утверждения JWT/OIDC или конкретного issuer. Employee credential не заменяет token. Provider и права требуют Q19–20/Q25."
-  "parameters":
-    "IdempotencyKey":
-      "name": "Idempotency-Key"
-      "in": "header"
-      "required": true
-      "schema":
-        "type": "string"
-        "format": "uuid"
-      "example": "00000000-0000-4000-8000-000000000801"
-      "description": "UUID, созданный клиентом до первого запроса. Область — доверенный API principal. Тот же ключ/route/body возвращает исходный status/body; другое содержимое — 409. Хранение без автоочистки в MVP."
-    "Limit":
-      "name": "limit"
-      "in": "query"
-      "schema":
-        "type": "integer"
-        "minimum": 1
-        "maximum": 200
-        "default": 50
-    "Cursor":
-      "name": "cursor"
-      "in": "query"
-      "schema":
-        "type": "string"
-        "minLength": 1
-      "description": "Непрозрачный курсор того же endpoint и фильтров; порядок описан в architecture.md."
-    "employee_id":
-      "name": "employee_id"
-      "in": "path"
-      "required": true
-      "schema":
-        "type": "string"
-        "format": "uuid"
-      "example": "00000000-0000-4000-8000-000000000137"
-    "credential_id":
-      "name": "credential_id"
-      "in": "path"
-      "required": true
-      "schema":
-        "type": "string"
-        "format": "uuid"
-      "example": "00000000-0000-4000-8000-000000000138"
-    "battery_id":
-      "name": "battery_id"
-      "in": "path"
-      "required": true
-      "schema":
-        "type": "string"
-        "format": "uuid"
-      "example": "00000000-0000-4000-8000-000000000412"
-    "operation_id":
-      "name": "operation_id"
-      "in": "path"
-      "required": true
-      "schema":
-        "type": "string"
-        "format": "uuid"
-      "example": "00000000-0000-4000-8000-000000000901"
-  "responses":
-    "Error400":
-      "description": "Некорректный запрос"
-      "content":
-        "application/json":
-          "schema":
-            "$ref": "#/components/schemas/Error"
-          "example":
-            "error":
-              "code": "INVALID_REQUEST"
-              "message": "Некорректный запрос"
-              "details": {}
-              "request_id": "trace-example"
-    "Error401":
-      "description": "Требуется аутентификация"
-      "content":
-        "application/json":
-          "schema":
-            "$ref": "#/components/schemas/Error"
-          "example":
-            "error":
-              "code": "UNAUTHENTICATED"
-              "message": "Требуется аутентификация"
-              "details": {}
-              "request_id": "trace-example"
-    "Error403":
-      "description": "Действие не разрешено"
-      "content":
-        "application/json":
-          "schema":
-            "$ref": "#/components/schemas/Error"
-          "example":
-            "error":
-              "code": "FORBIDDEN"
-              "message": "Действие не разрешено"
-              "details": {}
-              "request_id": "trace-example"
-    "Error404":
-      "description": "Объект не найден"
-      "content":
-        "application/json":
-          "schema":
-            "$ref": "#/components/schemas/Error"
-          "example":
-            "error":
-              "code": "RESOURCE_NOT_FOUND"
-              "message": "Объект не найден"
-              "details": {}
-              "request_id": "trace-example"
-    "Error409":
-      "description": "Конфликт текущего состояния"
-      "content":
-        "application/json":
-          "schema":
-            "$ref": "#/components/schemas/Error"
-          "example":
-            "error":
-              "code": "BATTERY_ALREADY_ISSUED"
-              "message": "Конфликт текущего состояния"
-              "details": {}
-              "request_id": "trace-example"
-    "Error422":
-      "description": "Недопустимое значение"
-      "content":
-        "application/json":
-          "schema":
-            "$ref": "#/components/schemas/Error"
-          "example":
-            "error":
-              "code": "VALIDATION_FAILED"
-              "message": "Недопустимое значение"
-              "details": {}
-              "request_id": "trace-example"
-    "Error500":
-      "description": "Внутренняя ошибка"
-      "content":
-        "application/json":
-          "schema":
-            "$ref": "#/components/schemas/Error"
-          "example":
-            "error":
-              "code": "INTERNAL_ERROR"
-              "message": "Внутренняя ошибка"
-              "details": {}
-              "request_id": "trace-example"
-    "Error503":
-      "description": "Повторите запрос с тем же ключом"
-      "content":
-        "application/json":
-          "schema":
-            "$ref": "#/components/schemas/Error"
-          "example":
-            "error":
-              "code": "TEMPORARILY_UNAVAILABLE"
-              "message": "Повторите запрос с тем же ключом"
-              "details": {}
-              "request_id": "trace-example"
-    "Error413":
-      "description": "Тело запроса слишком велико"
-      "content":
-        "application/json":
-          "schema":
-            "$ref": "#/components/schemas/Error"
-          "example":
-            "error":
-              "code": "PAYLOAD_TOO_LARGE"
-              "message": "Тело запроса слишком велико"
-              "details": {}
-              "request_id": "trace-example"
-    "Error415":
-      "description": "Требуется application/json"
-      "content":
-        "application/json":
-          "schema":
-            "$ref": "#/components/schemas/Error"
-          "example":
-            "error":
-              "code": "UNSUPPORTED_MEDIA_TYPE"
-              "message": "Требуется application/json"
-              "details": {}
-              "request_id": "trace-example"
-  "schemas":
-    "Employee":
-      "type": "object"
-      "additionalProperties": false
-      "properties":
-        "id":
-          "type": "string"
-          "format": "uuid"
-        "is_active":
-          "type": "boolean"
-        "created_at":
-          "type": "string"
-          "format": "date-time"
-        "updated_at":
-          "type": "string"
-          "format": "date-time"
-        "disabled_at":
-          "type": "string"
-          "format": "date-time"
-          "nullable": true
-        "display_name":
-          "type": "string"
-          "minLength": 1
-        "personnel_number":
-          "type": "string"
-          "nullable": true
-      "required":
-        - "id"
-        - "is_active"
-        - "created_at"
-        - "updated_at"
-        - "disabled_at"
-        - "display_name"
-        - "personnel_number"
-    "Credential":
-      "type": "object"
-      "additionalProperties": false
-      "properties":
-        "id":
-          "type": "string"
-          "format": "uuid"
-        "is_active":
-          "type": "boolean"
-        "created_at":
-          "type": "string"
-          "format": "date-time"
-        "updated_at":
-          "type": "string"
-          "format": "date-time"
-        "disabled_at":
-          "type": "string"
-          "format": "date-time"
-          "nullable": true
-        "employee_id":
-          "type": "string"
-          "format": "uuid"
-        "value":
-          "type": "string"
-          "minLength": 1
-      "required":
-        - "id"
-        - "is_active"
-        - "created_at"
-        - "updated_at"
-        - "disabled_at"
-        - "employee_id"
-        - "value"
-    "Battery":
-      "type": "object"
-      "additionalProperties": false
-      "properties":
-        "id":
-          "type": "string"
-          "format": "uuid"
-        "inventory_code":
-          "type": "string"
-          "minLength": 1
-        "serial_number":
-          "type": "string"
-          "nullable": true
-        "status":
-          "type": "string"
-          "enum":
-            - "STORED"
-            - "ISSUED"
-        "current_location":
-          "type": "string"
-          "pattern": '^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$'
-          "nullable": true
-          "minLength": 1
-        "current_holder_employee_id":
-          "type": "string"
-          "format": "uuid"
-          "nullable": true
-        "version":
-          "type": "integer"
-          "format": "int64"
-          "minimum": 1
-        "created_at":
-          "type": "string"
-          "format": "date-time"
-        "updated_at":
-          "type": "string"
-          "format": "date-time"
-      "required":
-        - "id"
-        - "inventory_code"
-        - "serial_number"
-        - "status"
-        - "current_location"
-        - "current_holder_employee_id"
-        - "version"
-        - "created_at"
-        - "updated_at"
-      "description": "STORED: current_location заполнен, holder null. ISSUED: location null, holder заполнен. Current обновляется атомарно с immutable operation; полный replay на GET не нужен."
-    "Operation":
-      "type": "object"
-      "additionalProperties": false
-      "properties":
-        "id":
-          "type": "string"
-          "format": "uuid"
-        "battery_id":
-          "type": "string"
-          "format": "uuid"
-        "battery_version":
-          "type": "integer"
-          "format": "int64"
-          "minimum": 1
-        "type":
-          "type": "string"
-          "enum":
-            - "STORE"
-            - "TAKE"
-            - "RETURN"
-            - "MOVE"
-        "actor_employee_id":
-          "type": "string"
-          "format": "uuid"
-        "credential_id":
-          "type": "string"
-          "format": "uuid"
-        "source_status":
-          "type": "string"
-          "nullable": true
-          "enum":
-            - "STORED"
-            - "ISSUED"
-            - null
-        "destination_status":
-          "type": "string"
-          "enum":
-            - "STORED"
-            - "ISSUED"
-        "source_location":
-          "type": "string"
-          "pattern": '^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$'
-          "nullable": true
-          "minLength": 1
-        "destination_location":
-          "type": "string"
-          "pattern": '^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$'
-          "nullable": true
-          "minLength": 1
-        "source_holder_employee_id":
-          "type": "string"
-          "format": "uuid"
-          "nullable": true
-        "destination_holder_employee_id":
-          "type": "string"
-          "format": "uuid"
-          "nullable": true
-        "device_code":
-          "type": "string"
-          "nullable": true
-          "minLength": 1
-        "occurred_at":
-          "type": "string"
-          "format": "date-time"
-      "required":
-        - "id"
-        - "battery_id"
-        - "battery_version"
-        - "type"
-        - "actor_employee_id"
-        - "credential_id"
-        - "source_status"
-        - "destination_status"
-        - "source_location"
-        - "destination_location"
-        - "source_holder_employee_id"
-        - "destination_holder_employee_id"
-        - "device_code"
-        - "occurred_at"
-      "description": "Неизменяемый переход. Source/destination — текстовые адреса на момент оформления; source сервер берёт из current. Device code является меткой трассировки, не доказательством аппаратной аутентификации."
-    "CommandResult":
-      "type": "object"
-      "additionalProperties": false
-      "properties":
-        "battery":
-          "$ref": "#/components/schemas/Battery"
-        "operation":
-          "$ref": "#/components/schemas/Operation"
-      "required":
-        - "battery"
-        - "operation"
-    "CredentialResolution":
-      "type": "object"
-      "additionalProperties": false
-      "properties":
-        "employee":
-          "$ref": "#/components/schemas/Employee"
-        "credential_id":
-          "type": "string"
-          "format": "uuid"
-      "required":
-        - "employee"
-        - "credential_id"
-    "Error":
-      "type": "object"
-      "additionalProperties": false
-      "properties":
-        "error":
-          "type": "object"
-          "additionalProperties": false
-          "properties":
-            "code":
-              "type": "string"
-              "minLength": 1
-            "message":
-              "type": "string"
-              "minLength": 1
-            "details":
-              "type": "object"
-              "additionalProperties": true
-            "request_id":
-              "type": "string"
-              "minLength": 1
-          "required":
-            - "code"
-            - "message"
-            - "details"
-            - "request_id"
-      "required":
-        - "error"
-    "CreateEmployee":
-      "type": "object"
-      "additionalProperties": false
-      "properties":
-        "display_name":
-          "type": "string"
-          "minLength": 1
-        "personnel_number":
-          "type": "string"
-          "minLength": 1
-      "required":
-        - "display_name"
-    "PatchEmployee":
-      "type": "object"
-      "additionalProperties": false
-      "properties":
-        "display_name":
-          "type": "string"
-          "minLength": 1
-        "is_active":
-          "type": "boolean"
-      "required": []
-      "minProperties": 1
-    "ResolveCredential":
-      "type": "object"
-      "additionalProperties": false
-      "properties":
-        "credential_value":
-          "type": "string"
-          "minLength": 1
-      "required":
-        - "credential_value"
-    "CreateCredential":
-      "type": "object"
-      "additionalProperties": false
-      "properties":
-        "value":
-          "type": "string"
-          "minLength": 1
-        "replaces_credential_id":
-          "type": "string"
-          "format": "uuid"
-      "required":
-        - "value"
-      "description": "Замена отключает только указанную карту того же сотрудника и создаёт новую в одной транзакции. Значение не нормализуется в число."
-    "DisableCredential":
-      "type": "object"
-      "additionalProperties": false
-      "properties":
-        "is_active":
-          "type": "boolean"
-          "enum":
+components:
+  parameters:
+    Cursor:
+      in: query
+      name: cursor
+      schema:
+        minLength: 1
+        type: string
+    IdempotencyKey:
+      example: 00000000-0000-4000-8000-000000000801
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema:
+        format: uuid
+        type: string
+    Limit:
+      in: query
+      name: limit
+      schema:
+        default: 50
+        maximum: 200
+        minimum: 1
+        type: integer
+    battery_id:
+      example: 00000000-0000-4000-8000-000000000412
+      in: path
+      name: battery_id
+      required: true
+      schema:
+        format: uuid
+        type: string
+    credential_id:
+      example: 00000000-0000-4000-8000-000000000138
+      in: path
+      name: credential_id
+      required: true
+      schema:
+        format: uuid
+        type: string
+    employee_id:
+      example: 00000000-0000-4000-8000-000000000137
+      in: path
+      name: employee_id
+      required: true
+      schema:
+        format: uuid
+        type: string
+    operation_id:
+      example: 00000000-0000-4000-8000-000000000901
+      in: path
+      name: operation_id
+      required: true
+      schema:
+        format: uuid
+        type: string
+  responses:
+    Error400:
+      content:
+        application/json:
+          example:
+            error:
+              code: INVALID_REQUEST
+              details: {}
+              message: Некорректный запрос
+              request_id: trace-example
+          schema:
+            $ref: '#/components/schemas/Error'
+      description: Некорректный запрос
+    Error403:
+      content:
+        application/json:
+          example:
+            error:
+              code: FORBIDDEN
+              details: {}
+              message: Действие не разрешено
+              request_id: trace-example
+          schema:
+            $ref: '#/components/schemas/Error'
+      description: Сотрудник или карта отключены; возврат разрешён только держателю
+    Error404:
+      content:
+        application/json:
+          example:
+            error:
+              code: RESOURCE_NOT_FOUND
+              details: {}
+              message: Объект не найден
+              request_id: trace-example
+          schema:
+            $ref: '#/components/schemas/Error'
+      description: Объект не найден
+    Error409:
+      content:
+        application/json:
+          example:
+            error:
+              code: BATTERY_ALREADY_ISSUED
+              details: {}
+              message: Конфликт текущего состояния
+              request_id: trace-example
+          schema:
+            $ref: '#/components/schemas/Error'
+      description: Конфликт состояния
+    Error413:
+      content:
+        application/json:
+          example:
+            error:
+              code: PAYLOAD_TOO_LARGE
+              details: {}
+              message: Тело запроса слишком велико
+              request_id: trace-example
+          schema:
+            $ref: '#/components/schemas/Error'
+      description: Тело запроса слишком большое
+    Error415:
+      content:
+        application/json:
+          example:
+            error:
+              code: UNSUPPORTED_MEDIA_TYPE
+              details: {}
+              message: Требуется application/json
+              request_id: trace-example
+          schema:
+            $ref: '#/components/schemas/Error'
+      description: Ожидается application/json
+    Error422:
+      content:
+        application/json:
+          example:
+            error:
+              code: VALIDATION_FAILED
+              details: {}
+              message: Недопустимое значение
+              request_id: trace-example
+          schema:
+            $ref: '#/components/schemas/Error'
+      description: Недопустимое значение
+    Error500:
+      content:
+        application/json:
+          example:
+            error:
+              code: INTERNAL_ERROR
+              details: {}
+              message: Внутренняя ошибка
+              request_id: trace-example
+          schema:
+            $ref: '#/components/schemas/Error'
+      description: Внутренняя ошибка
+    Error503:
+      content:
+        application/json:
+          example:
+            error:
+              code: TEMPORARILY_UNAVAILABLE
+              details: {}
+              message: Повторите запрос с тем же ключом
+              request_id: trace-example
+          schema:
+            $ref: '#/components/schemas/Error'
+      description: Повторите запрос с тем же ключом
+  schemas:
+    Battery:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        current_holder_employee_id:
+          format: uuid
+          nullable: true
+          type: string
+        current_location:
+          minLength: 1
+          nullable: true
+          pattern: ^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$
+          type: string
+        id:
+          format: uuid
+          type: string
+        inventory_code:
+          minLength: 1
+          type: string
+        serial_number:
+          nullable: true
+          type: string
+        status:
+          enum:
+            - STORED
+            - ISSUED
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        version:
+          format: int64
+          minimum: 1
+          type: integer
+      required:
+        - id
+        - inventory_code
+        - serial_number
+        - status
+        - current_location
+        - current_holder_employee_id
+        - version
+        - created_at
+        - updated_at
+      type: object
+    BatteryPage:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/Battery'
+          type: array
+        next_cursor:
+          nullable: true
+          type: string
+      required:
+        - items
+        - next_cursor
+      type: object
+    CommandResult:
+      additionalProperties: false
+      properties:
+        battery:
+          $ref: '#/components/schemas/Battery'
+        operation:
+          $ref: '#/components/schemas/Operation'
+      required:
+        - battery
+        - operation
+      type: object
+    CreateCredential:
+      additionalProperties: false
+      properties:
+        replaces_credential_id:
+          format: uuid
+          type: string
+        value:
+          minLength: 1
+          type: string
+      required:
+        - value
+      type: object
+    CreateEmployee:
+      additionalProperties: false
+      properties:
+        display_name:
+          minLength: 1
+          type: string
+        personnel_number:
+          minLength: 1
+          type: string
+      required:
+        - display_name
+      type: object
+    Credential:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        disabled_at:
+          format: date-time
+          nullable: true
+          type: string
+        employee_id:
+          format: uuid
+          type: string
+        id:
+          format: uuid
+          type: string
+        is_active:
+          type: boolean
+        updated_at:
+          format: date-time
+          type: string
+        value:
+          minLength: 1
+          type: string
+      required:
+        - id
+        - is_active
+        - created_at
+        - updated_at
+        - disabled_at
+        - employee_id
+        - value
+      type: object
+    CredentialPage:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/Credential'
+          type: array
+        next_cursor:
+          nullable: true
+          type: string
+      required:
+        - items
+        - next_cursor
+      type: object
+    CredentialResolution:
+      additionalProperties: false
+      properties:
+        credential_id:
+          format: uuid
+          type: string
+        employee:
+          $ref: '#/components/schemas/Employee'
+      required:
+        - employee
+        - credential_id
+      type: object
+    DisableCredential:
+      additionalProperties: false
+      properties:
+        is_active:
+          enum:
             - false
-      "required":
-        - "is_active"
-    "StoreBattery":
-      "type": "object"
-      "additionalProperties": false
-      "properties":
-        "inventory_code":
-          "type": "string"
-          "minLength": 1
-        "serial_number":
-          "type": "string"
-          "minLength": 1
-        "actor_credential_value":
-          "type": "string"
-          "minLength": 1
-        "destination_location":
-          "type": "string"
-          "pattern": '^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$'
-          "minLength": 1
-      "required":
-        - "inventory_code"
-        - "actor_credential_value"
-        - "destination_location"
-    "TakeBattery":
-      "type": "object"
-      "additionalProperties": false
-      "properties":
-        "actor_credential_value":
-          "type": "string"
-          "minLength": 1
-        "expected_version":
-          "type": "integer"
-          "format": "int64"
-          "minimum": 1
-        "observed_source_location":
-          "type": "string"
-          "pattern": '^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$'
-          "minLength": 1
-      "required":
-        - "actor_credential_value"
-      "description": "Только STORED. Source определяется сервером под FOR UPDATE; observed_source_location только сверяется. Actor становится holder."
-    "ReturnBattery":
-      "type": "object"
-      "additionalProperties": false
-      "properties":
-        "actor_credential_value":
-          "type": "string"
-          "minLength": 1
-        "destination_location":
-          "type": "string"
-          "pattern": '^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$'
-          "minLength": 1
-        "expected_version":
-          "type": "integer"
-          "format": "int64"
-          "minimum": 1
-      "required":
-        - "actor_credential_value"
-        - "destination_location"
-      "description": "Возврат разрешён только текущему держателю: сравниваются employee.id, а не значения карты. Для другого сотрудника 403 RETURN_NOT_ALLOWED."
-    "MoveBattery":
-      "type": "object"
-      "additionalProperties": false
-      "properties":
-        "actor_credential_value":
-          "type": "string"
-          "minLength": 1
-        "destination_location":
-          "type": "string"
-          "pattern": '^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$'
-          "minLength": 1
-        "expected_version":
-          "type": "integer"
-          "format": "int64"
-          "minimum": 1
-        "observed_source_location":
-          "type": "string"
-          "pattern": '^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$'
-          "minLength": 1
-      "required":
-        - "actor_credential_value"
-        - "destination_location"
-    "EmployeePage":
-      "type": "object"
-      "additionalProperties": false
-      "properties":
-        "items":
-          "type": "array"
-          "items":
-            "$ref": "#/components/schemas/Employee"
-        "next_cursor":
-          "type": "string"
-          "nullable": true
-      "required":
-        - "items"
-        - "next_cursor"
-    "CredentialPage":
-      "type": "object"
-      "additionalProperties": false
-      "properties":
-        "items":
-          "type": "array"
-          "items":
-            "$ref": "#/components/schemas/Credential"
-        "next_cursor":
-          "type": "string"
-          "nullable": true
-      "required":
-        - "items"
-        - "next_cursor"
-    "BatteryPage":
-      "type": "object"
-      "additionalProperties": false
-      "properties":
-        "items":
-          "type": "array"
-          "items":
-            "$ref": "#/components/schemas/Battery"
-        "next_cursor":
-          "type": "string"
-          "nullable": true
-      "required":
-        - "items"
-        - "next_cursor"
-    "OperationPage":
-      "type": "object"
-      "additionalProperties": false
-      "properties":
-        "items":
-          "type": "array"
-          "items":
-            "$ref": "#/components/schemas/Operation"
-        "next_cursor":
-          "type": "string"
-          "nullable": true
-      "required":
-        - "items"
-        - "next_cursor"
+          type: boolean
+      required:
+        - is_active
+      type: object
+    Employee:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        disabled_at:
+          format: date-time
+          nullable: true
+          type: string
+        display_name:
+          minLength: 1
+          type: string
+        id:
+          format: uuid
+          type: string
+        is_active:
+          type: boolean
+        personnel_number:
+          nullable: true
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+        - id
+        - is_active
+        - created_at
+        - updated_at
+        - disabled_at
+        - display_name
+        - personnel_number
+      type: object
+    EmployeePage:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/Employee'
+          type: array
+        next_cursor:
+          nullable: true
+          type: string
+      required:
+        - items
+        - next_cursor
+      type: object
+    Error:
+      additionalProperties: false
+      properties:
+        error:
+          additionalProperties: false
+          properties:
+            code:
+              minLength: 1
+              type: string
+            details:
+              additionalProperties: true
+              type: object
+            message:
+              minLength: 1
+              type: string
+            request_id:
+              minLength: 1
+              type: string
+          required:
+            - code
+            - message
+            - details
+            - request_id
+          type: object
+      required:
+        - error
+      type: object
+    MoveBattery:
+      additionalProperties: false
+      properties:
+        actor_credential_value:
+          minLength: 1
+          type: string
+        destination_location:
+          minLength: 1
+          pattern: ^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$
+          type: string
+        expected_version:
+          format: int64
+          minimum: 1
+          type: integer
+        observed_source_location:
+          minLength: 1
+          pattern: ^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$
+          type: string
+      required:
+        - actor_credential_value
+        - destination_location
+      type: object
+    Operation:
+      additionalProperties: false
+      properties:
+        actor_employee_id:
+          format: uuid
+          type: string
+        battery_id:
+          format: uuid
+          type: string
+        battery_version:
+          format: int64
+          minimum: 1
+          type: integer
+        credential_id:
+          format: uuid
+          type: string
+        destination_holder_employee_id:
+          format: uuid
+          nullable: true
+          type: string
+        destination_location:
+          minLength: 1
+          nullable: true
+          pattern: ^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$
+          type: string
+        destination_status:
+          enum:
+            - STORED
+            - ISSUED
+          type: string
+        device_code:
+          minLength: 1
+          nullable: true
+          type: string
+        id:
+          format: uuid
+          type: string
+        occurred_at:
+          format: date-time
+          type: string
+        source_holder_employee_id:
+          format: uuid
+          nullable: true
+          type: string
+        source_location:
+          minLength: 1
+          nullable: true
+          pattern: ^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$
+          type: string
+        source_status:
+          enum:
+            - STORED
+            - ISSUED
+            - null
+          nullable: true
+          type: string
+        type:
+          enum:
+            - STORE
+            - TAKE
+            - RETURN
+            - MOVE
+          type: string
+      required:
+        - id
+        - battery_id
+        - battery_version
+        - type
+        - actor_employee_id
+        - credential_id
+        - source_status
+        - destination_status
+        - source_location
+        - destination_location
+        - source_holder_employee_id
+        - destination_holder_employee_id
+        - device_code
+        - occurred_at
+      type: object
+    OperationPage:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/Operation'
+          type: array
+        next_cursor:
+          nullable: true
+          type: string
+      required:
+        - items
+        - next_cursor
+      type: object
+    PatchEmployee:
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        display_name:
+          minLength: 1
+          type: string
+        is_active:
+          type: boolean
+      required: []
+      type: object
+    ResolveCredential:
+      additionalProperties: false
+      properties:
+        credential_value:
+          minLength: 1
+          type: string
+      required:
+        - credential_value
+      type: object
+    ReturnBattery:
+      additionalProperties: false
+      properties:
+        actor_credential_value:
+          minLength: 1
+          type: string
+        destination_location:
+          minLength: 1
+          pattern: ^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$
+          type: string
+        expected_version:
+          format: int64
+          minimum: 1
+          type: integer
+      required:
+        - actor_credential_value
+        - destination_location
+      type: object
+    StoreBattery:
+      additionalProperties: false
+      properties:
+        actor_credential_value:
+          minLength: 1
+          type: string
+        destination_location:
+          minLength: 1
+          pattern: ^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$
+          type: string
+        inventory_code:
+          minLength: 1
+          type: string
+        serial_number:
+          minLength: 1
+          type: string
+      required:
+        - inventory_code
+        - actor_credential_value
+        - destination_location
+      type: object
+    TakeBattery:
+      additionalProperties: false
+      properties:
+        actor_credential_value:
+          minLength: 1
+          type: string
+        expected_version:
+          format: int64
+          minimum: 1
+          type: integer
+        observed_source_location:
+          minLength: 1
+          pattern: ^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$
+          type: string
+      required:
+        - actor_credential_value
+      type: object
+info:
+  title: Pandora — учёт АКБ
+  version: "1"
+openapi: 3.0.3
+paths:
+  /batteries:
+    get:
+      operationId: listBatteries
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - in: query
+          name: inventory_code
+          schema:
+            minLength: 1
+            type: string
+        - in: query
+          name: status
+          schema:
+            enum:
+              - STORED
+              - ISSUED
+            type: string
+        - in: query
+          name: holder_employee_id
+          schema:
+            format: uuid
+            type: string
+        - in: query
+          name: location
+          schema:
+            minLength: 1
+            pattern: ^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              example:
+                items:
+                  - created_at: "2026-09-30T09:14:00Z"
+                    current_holder_employee_id: null
+                    current_location: 1.1.1
+                    id: 00000000-0000-4000-8000-000000000412
+                    inventory_code: B-00412
+                    serial_number: null
+                    status: STORED
+                    updated_at: "2026-09-30T09:14:00Z"
+                    version: 1
+                next_cursor: null
+              schema:
+                $ref: '#/components/schemas/BatteryPage'
+          description: Успешно
+        "400":
+          $ref: '#/components/responses/Error400'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: Поиск и текущие состояния
+      tags:
+        - Batteries
+    post:
+      operationId: storeNewBattery
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              actor_credential_value: "0004097281923"
+              destination_location: 1.1.1
+              inventory_code: B-00412
+            schema:
+              $ref: '#/components/schemas/StoreBattery'
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              example:
+                battery:
+                  created_at: "2026-09-30T09:14:00Z"
+                  current_holder_employee_id: null
+                  current_location: 1.1.1
+                  id: 00000000-0000-4000-8000-000000000412
+                  inventory_code: B-00412
+                  serial_number: null
+                  status: STORED
+                  updated_at: "2026-09-30T09:14:00Z"
+                  version: 1
+                operation:
+                  actor_employee_id: 00000000-0000-4000-8000-000000000137
+                  battery_id: 00000000-0000-4000-8000-000000000412
+                  battery_version: 1
+                  credential_id: 00000000-0000-4000-8000-000000000138
+                  destination_holder_employee_id: null
+                  destination_location: 1.1.1
+                  destination_status: STORED
+                  device_code: null
+                  id: 00000000-0000-4000-8000-000000000901
+                  occurred_at: "2026-09-30T09:14:00Z"
+                  source_holder_employee_id: null
+                  source_location: null
+                  source_status: null
+                  type: STORE
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+          description: Создано
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: boolean
+            Location:
+              schema:
+                type: string
+        "400":
+          $ref: '#/components/responses/Error400'
+        "403":
+          $ref: '#/components/responses/Error403'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "409":
+          $ref: '#/components/responses/Error409'
+        "413":
+          $ref: '#/components/responses/Error413'
+        "415":
+          $ref: '#/components/responses/Error415'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: Зарегистрировать и разместить АКБ
+      tags:
+        - Commands
+  /batteries/{battery_id}:
+    get:
+      operationId: getBattery
+      parameters:
+        - $ref: '#/components/parameters/battery_id'
+      responses:
+        "200":
+          content:
+            application/json:
+              example:
+                created_at: "2026-09-30T09:14:00Z"
+                current_holder_employee_id: null
+                current_location: 1.1.1
+                id: 00000000-0000-4000-8000-000000000412
+                inventory_code: B-00412
+                serial_number: null
+                status: STORED
+                updated_at: "2026-09-30T09:14:00Z"
+                version: 1
+              schema:
+                $ref: '#/components/schemas/Battery'
+          description: Успешно
+        "400":
+          $ref: '#/components/responses/Error400'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: Текущее состояние АКБ
+      tags:
+        - Batteries
+  /batteries/{battery_id}/move:
+    post:
+      operationId: moveBattery
+      parameters:
+        - $ref: '#/components/parameters/battery_id'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              actor_credential_value: "0004097281923"
+              destination_location: 2.1.2
+              expected_version: 3
+              observed_source_location: 1.2.4
+            schema:
+              $ref: '#/components/schemas/MoveBattery'
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              example:
+                battery:
+                  created_at: "2026-09-30T09:14:00Z"
+                  current_holder_employee_id: null
+                  current_location: 2.1.2
+                  id: 00000000-0000-4000-8000-000000000412
+                  inventory_code: B-00412
+                  serial_number: null
+                  status: STORED
+                  updated_at: "2026-09-30T11:26:00Z"
+                  version: 4
+                operation:
+                  actor_employee_id: 00000000-0000-4000-8000-000000000137
+                  battery_id: 00000000-0000-4000-8000-000000000412
+                  battery_version: 4
+                  credential_id: 00000000-0000-4000-8000-000000000138
+                  destination_holder_employee_id: null
+                  destination_location: 2.1.2
+                  destination_status: STORED
+                  device_code: null
+                  id: 00000000-0000-4000-8000-000000000904
+                  occurred_at: "2026-09-30T11:26:00Z"
+                  source_holder_employee_id: null
+                  source_location: 1.2.4
+                  source_status: STORED
+                  type: MOVE
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+          description: Создано
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: boolean
+            Location:
+              schema:
+                type: string
+        "400":
+          $ref: '#/components/responses/Error400'
+        "403":
+          $ref: '#/components/responses/Error403'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "409":
+          $ref: '#/components/responses/Error409'
+        "413":
+          $ref: '#/components/responses/Error413'
+        "415":
+          $ref: '#/components/responses/Error415'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: Переместить между ячейками
+      tags:
+        - Commands
+  /batteries/{battery_id}/operations:
+    get:
+      operationId: listBatteryOperations
+      parameters:
+        - $ref: '#/components/parameters/battery_id'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        "200":
+          content:
+            application/json:
+              example:
+                items:
+                  - actor_employee_id: 00000000-0000-4000-8000-000000000137
+                    battery_id: 00000000-0000-4000-8000-000000000412
+                    battery_version: 1
+                    credential_id: 00000000-0000-4000-8000-000000000138
+                    destination_holder_employee_id: null
+                    destination_location: 1.1.1
+                    destination_status: STORED
+                    device_code: null
+                    id: 00000000-0000-4000-8000-000000000901
+                    occurred_at: "2026-09-30T09:14:00Z"
+                    source_holder_employee_id: null
+                    source_location: null
+                    source_status: null
+                    type: STORE
+                next_cursor: null
+              schema:
+                $ref: '#/components/schemas/OperationPage'
+          description: Успешно
+        "400":
+          $ref: '#/components/responses/Error400'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: История АКБ по версии
+      tags:
+        - History
+  /batteries/{battery_id}/return:
+    post:
+      operationId: returnBattery
+      parameters:
+        - $ref: '#/components/parameters/battery_id'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              actor_credential_value: "0004097281923"
+              destination_location: 1.2.4
+              expected_version: 2
+            schema:
+              $ref: '#/components/schemas/ReturnBattery'
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              example:
+                battery:
+                  created_at: "2026-09-30T09:14:00Z"
+                  current_holder_employee_id: null
+                  current_location: 1.2.4
+                  id: 00000000-0000-4000-8000-000000000412
+                  inventory_code: B-00412
+                  serial_number: null
+                  status: STORED
+                  updated_at: "2026-09-30T11:26:00Z"
+                  version: 3
+                operation:
+                  actor_employee_id: 00000000-0000-4000-8000-000000000137
+                  battery_id: 00000000-0000-4000-8000-000000000412
+                  battery_version: 3
+                  credential_id: 00000000-0000-4000-8000-000000000138
+                  destination_holder_employee_id: null
+                  destination_location: 1.2.4
+                  destination_status: STORED
+                  device_code: null
+                  id: 00000000-0000-4000-8000-000000000903
+                  occurred_at: "2026-09-30T11:26:00Z"
+                  source_holder_employee_id: 00000000-0000-4000-8000-000000000137
+                  source_location: null
+                  source_status: ISSUED
+                  type: RETURN
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+          description: Создано
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: boolean
+            Location:
+              schema:
+                type: string
+        "400":
+          $ref: '#/components/responses/Error400'
+        "403":
+          $ref: '#/components/responses/Error403'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "409":
+          $ref: '#/components/responses/Error409'
+        "413":
+          $ref: '#/components/responses/Error413'
+        "415":
+          $ref: '#/components/responses/Error415'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: Вернуть выданную АКБ
+      tags:
+        - Commands
+  /batteries/{battery_id}/take:
+    post:
+      operationId: takeBattery
+      parameters:
+        - $ref: '#/components/parameters/battery_id'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              actor_credential_value: "0004097281923"
+              expected_version: 1
+            schema:
+              $ref: '#/components/schemas/TakeBattery'
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              example:
+                battery:
+                  created_at: "2026-09-30T09:14:00Z"
+                  current_holder_employee_id: 00000000-0000-4000-8000-000000000137
+                  current_location: null
+                  id: 00000000-0000-4000-8000-000000000412
+                  inventory_code: B-00412
+                  serial_number: null
+                  status: ISSUED
+                  updated_at: "2026-09-30T11:26:00Z"
+                  version: 2
+                operation:
+                  actor_employee_id: 00000000-0000-4000-8000-000000000137
+                  battery_id: 00000000-0000-4000-8000-000000000412
+                  battery_version: 2
+                  credential_id: 00000000-0000-4000-8000-000000000138
+                  destination_holder_employee_id: 00000000-0000-4000-8000-000000000137
+                  destination_location: null
+                  destination_status: ISSUED
+                  device_code: null
+                  id: 00000000-0000-4000-8000-000000000902
+                  occurred_at: "2026-09-30T11:26:00Z"
+                  source_holder_employee_id: null
+                  source_location: 1.1.1
+                  source_status: STORED
+                  type: TAKE
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+          description: Создано
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: boolean
+            Location:
+              schema:
+                type: string
+        "400":
+          $ref: '#/components/responses/Error400'
+        "403":
+          $ref: '#/components/responses/Error403'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "409":
+          $ref: '#/components/responses/Error409'
+        "413":
+          $ref: '#/components/responses/Error413'
+        "415":
+          $ref: '#/components/responses/Error415'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: Выдать АКБ сотруднику
+      tags:
+        - Commands
+  /credential-resolutions:
+    post:
+      operationId: resolveCredential
+      requestBody:
+        content:
+          application/json:
+            example:
+              credential_value: "0004097281923"
+            schema:
+              $ref: '#/components/schemas/ResolveCredential'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              example:
+                credential_id: 00000000-0000-4000-8000-000000000138
+                employee:
+                  created_at: "2026-09-30T09:14:00Z"
+                  disabled_at: null
+                  display_name: Иван Петров
+                  id: 00000000-0000-4000-8000-000000000137
+                  is_active: true
+                  personnel_number: "004281"
+                  updated_at: "2026-09-30T09:14:00Z"
+              schema:
+                $ref: '#/components/schemas/CredentialResolution'
+          description: Успешно
+        "400":
+          $ref: '#/components/responses/Error400'
+        "403":
+          $ref: '#/components/responses/Error403'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "413":
+          $ref: '#/components/responses/Error413'
+        "415":
+          $ref: '#/components/responses/Error415'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: Найти человека по активному credential
+      tags:
+        - Employees
+  /employees:
+    get:
+      operationId: listEmployees
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - in: query
+          name: is_active
+          schema:
+            type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              example:
+                items:
+                  - created_at: "2026-09-30T09:14:00Z"
+                    disabled_at: null
+                    display_name: Иван Петров
+                    id: 00000000-0000-4000-8000-000000000137
+                    is_active: true
+                    personnel_number: "004281"
+                    updated_at: "2026-09-30T09:14:00Z"
+                next_cursor: null
+              schema:
+                $ref: '#/components/schemas/EmployeePage'
+          description: Успешно
+        "400":
+          $ref: '#/components/responses/Error400'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: Список сотрудников
+      tags:
+        - Employees
+    post:
+      operationId: createEmployee
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              display_name: Иван Петров
+              personnel_number: "004281"
+            schema:
+              $ref: '#/components/schemas/CreateEmployee'
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              example:
+                created_at: "2026-09-30T09:14:00Z"
+                disabled_at: null
+                display_name: Иван Петров
+                id: 00000000-0000-4000-8000-000000000137
+                is_active: true
+                personnel_number: "004281"
+                updated_at: "2026-09-30T09:14:00Z"
+              schema:
+                $ref: '#/components/schemas/Employee'
+          description: Создано
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: boolean
+            Location:
+              schema:
+                type: string
+        "400":
+          $ref: '#/components/responses/Error400'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "409":
+          $ref: '#/components/responses/Error409'
+        "413":
+          $ref: '#/components/responses/Error413'
+        "415":
+          $ref: '#/components/responses/Error415'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: Создать сотрудника
+      tags:
+        - Employees
+  /employees/{employee_id}:
+    get:
+      operationId: getEmployee
+      parameters:
+        - $ref: '#/components/parameters/employee_id'
+      responses:
+        "200":
+          content:
+            application/json:
+              example:
+                created_at: "2026-09-30T09:14:00Z"
+                disabled_at: null
+                display_name: Иван Петров
+                id: 00000000-0000-4000-8000-000000000137
+                is_active: true
+                personnel_number: "004281"
+                updated_at: "2026-09-30T09:14:00Z"
+              schema:
+                $ref: '#/components/schemas/Employee'
+          description: Успешно
+        "400":
+          $ref: '#/components/responses/Error400'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: Сотрудник по ID
+      tags:
+        - Employees
+    patch:
+      operationId: patchEmployee
+      parameters:
+        - $ref: '#/components/parameters/employee_id'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              is_active: false
+            schema:
+              $ref: '#/components/schemas/PatchEmployee'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              example:
+                created_at: "2026-09-30T09:14:00Z"
+                disabled_at: null
+                display_name: Иван Петров
+                id: 00000000-0000-4000-8000-000000000137
+                is_active: true
+                personnel_number: "004281"
+                updated_at: "2026-09-30T09:14:00Z"
+              schema:
+                $ref: '#/components/schemas/Employee'
+          description: Успешно
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: boolean
+        "400":
+          $ref: '#/components/responses/Error400'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "409":
+          $ref: '#/components/responses/Error409'
+        "413":
+          $ref: '#/components/responses/Error413'
+        "415":
+          $ref: '#/components/responses/Error415'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: Изменить имя или активность
+      tags:
+        - Employees
+  /employees/{employee_id}/batteries:
+    get:
+      operationId: listEmployeeBatteries
+      parameters:
+        - $ref: '#/components/parameters/employee_id'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        "200":
+          content:
+            application/json:
+              example:
+                items:
+                  - created_at: "2026-09-30T09:14:00Z"
+                    current_holder_employee_id: null
+                    current_location: 1.1.1
+                    id: 00000000-0000-4000-8000-000000000412
+                    inventory_code: B-00412
+                    serial_number: null
+                    status: STORED
+                    updated_at: "2026-09-30T09:14:00Z"
+                    version: 1
+                next_cursor: null
+              schema:
+                $ref: '#/components/schemas/BatteryPage'
+          description: Успешно
+        "400":
+          $ref: '#/components/responses/Error400'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: АКБ у сотрудника сейчас
+      tags:
+        - Batteries
+  /employees/{employee_id}/credentials:
+    get:
+      operationId: listCredentials
+      parameters:
+        - $ref: '#/components/parameters/employee_id'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        "200":
+          content:
+            application/json:
+              example:
+                items:
+                  - created_at: "2026-09-30T09:14:00Z"
+                    disabled_at: null
+                    employee_id: 00000000-0000-4000-8000-000000000137
+                    id: 00000000-0000-4000-8000-000000000138
+                    is_active: true
+                    updated_at: "2026-09-30T09:14:00Z"
+                    value: "0004097281923"
+                next_cursor: null
+              schema:
+                $ref: '#/components/schemas/CredentialPage'
+          description: Успешно
+        "400":
+          $ref: '#/components/responses/Error400'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: Карты сотрудника, включая историю
+      tags:
+        - Employees
+    post:
+      operationId: createCredential
+      parameters:
+        - $ref: '#/components/parameters/employee_id'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              replaces_credential_id: 00000000-0000-4000-8000-000000000138
+              value: "0004097281924"
+            schema:
+              $ref: '#/components/schemas/CreateCredential'
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              example:
+                created_at: "2026-09-30T09:14:00Z"
+                disabled_at: null
+                employee_id: 00000000-0000-4000-8000-000000000137
+                id: 00000000-0000-4000-8000-000000000138
+                is_active: true
+                updated_at: "2026-09-30T09:14:00Z"
+                value: "0004097281923"
+              schema:
+                $ref: '#/components/schemas/Credential'
+          description: Создано
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: boolean
+            Location:
+              schema:
+                type: string
+        "400":
+          $ref: '#/components/responses/Error400'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "409":
+          $ref: '#/components/responses/Error409'
+        "413":
+          $ref: '#/components/responses/Error413'
+        "415":
+          $ref: '#/components/responses/Error415'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: Назначить или заменить карту
+      tags:
+        - Employees
+  /employees/{employee_id}/credentials/{credential_id}:
+    patch:
+      operationId: disableCredential
+      parameters:
+        - $ref: '#/components/parameters/employee_id'
+        - $ref: '#/components/parameters/credential_id'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              is_active: false
+            schema:
+              $ref: '#/components/schemas/DisableCredential'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              example:
+                created_at: "2026-09-30T09:14:00Z"
+                disabled_at: "2026-09-30T09:14:00Z"
+                employee_id: 00000000-0000-4000-8000-000000000137
+                id: 00000000-0000-4000-8000-000000000138
+                is_active: false
+                updated_at: "2026-09-30T09:14:00Z"
+                value: "0004097281923"
+              schema:
+                $ref: '#/components/schemas/Credential'
+          description: Успешно
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: boolean
+        "400":
+          $ref: '#/components/responses/Error400'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "409":
+          $ref: '#/components/responses/Error409'
+        "413":
+          $ref: '#/components/responses/Error413'
+        "415":
+          $ref: '#/components/responses/Error415'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: Деактивировать credential
+      tags:
+        - Employees
+  /employees/{employee_id}/operations:
+    get:
+      operationId: listEmployeeOperations
+      parameters:
+        - $ref: '#/components/parameters/employee_id'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        "200":
+          content:
+            application/json:
+              example:
+                items:
+                  - actor_employee_id: 00000000-0000-4000-8000-000000000137
+                    battery_id: 00000000-0000-4000-8000-000000000412
+                    battery_version: 1
+                    credential_id: 00000000-0000-4000-8000-000000000138
+                    destination_holder_employee_id: null
+                    destination_location: 1.1.1
+                    destination_status: STORED
+                    device_code: null
+                    id: 00000000-0000-4000-8000-000000000901
+                    occurred_at: "2026-09-30T09:14:00Z"
+                    source_holder_employee_id: null
+                    source_location: null
+                    source_status: null
+                    type: STORE
+                next_cursor: null
+              schema:
+                $ref: '#/components/schemas/OperationPage'
+          description: Успешно
+        "400":
+          $ref: '#/components/responses/Error400'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: История участия сотрудника
+      tags:
+        - History
+  /operations:
+    get:
+      operationId: listOperations
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - in: query
+          name: battery_id
+          schema:
+            format: uuid
+            type: string
+        - in: query
+          name: employee_id
+          schema:
+            format: uuid
+            type: string
+        - in: query
+          name: location
+          schema:
+            minLength: 1
+            pattern: ^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$
+            type: string
+        - in: query
+          name: device_code
+          schema:
+            minLength: 1
+            type: string
+        - in: query
+          name: type
+          schema:
+            enum:
+              - STORE
+              - TAKE
+              - RETURN
+              - MOVE
+            type: string
+        - in: query
+          name: from
+          schema:
+            format: date-time
+            type: string
+        - in: query
+          name: to
+          schema:
+            format: date-time
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              example:
+                items:
+                  - actor_employee_id: 00000000-0000-4000-8000-000000000137
+                    battery_id: 00000000-0000-4000-8000-000000000412
+                    battery_version: 1
+                    credential_id: 00000000-0000-4000-8000-000000000138
+                    destination_holder_employee_id: null
+                    destination_location: 1.1.1
+                    destination_status: STORED
+                    device_code: null
+                    id: 00000000-0000-4000-8000-000000000901
+                    occurred_at: "2026-09-30T09:14:00Z"
+                    source_holder_employee_id: null
+                    source_location: null
+                    source_status: null
+                    type: STORE
+                next_cursor: null
+              schema:
+                $ref: '#/components/schemas/OperationPage'
+          description: Успешно
+        "400":
+          $ref: '#/components/responses/Error400'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: Общий журнал и фильтры
+      tags:
+        - History
+  /operations/{operation_id}:
+    get:
+      operationId: getOperation
+      parameters:
+        - $ref: '#/components/parameters/operation_id'
+      responses:
+        "200":
+          content:
+            application/json:
+              example:
+                actor_employee_id: 00000000-0000-4000-8000-000000000137
+                battery_id: 00000000-0000-4000-8000-000000000412
+                battery_version: 1
+                credential_id: 00000000-0000-4000-8000-000000000138
+                destination_holder_employee_id: null
+                destination_location: 1.1.1
+                destination_status: STORED
+                device_code: null
+                id: 00000000-0000-4000-8000-000000000901
+                occurred_at: "2026-09-30T09:14:00Z"
+                source_holder_employee_id: null
+                source_location: null
+                source_status: null
+                type: STORE
+              schema:
+                $ref: '#/components/schemas/Operation'
+          description: Успешно
+        "400":
+          $ref: '#/components/responses/Error400'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: Неизменяемая операция
+      tags:
+        - History
+servers:
+  - url: /api
+tags:
+  - name: Employees
+  - name: Batteries
+  - name: Commands
+  - name: History

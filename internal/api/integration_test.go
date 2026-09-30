@@ -100,16 +100,13 @@ func newHarness(t *testing.T) *harness {
 	if err := app.Ping(); err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(testAPI(app))
+	srv := httptest.NewServer(api.New(app))
 	t.Cleanup(srv.Close)
 	return &harness{t: t, owner: owner, app: app, config: appcfg, server: srv, contract: newContractChecker(t)}
 }
 
 func perform(client *http.Client, base, method, path, body, key, contentType string) (response, error) {
-	return performToken(client, base, method, path, body, key, contentType, "test-token")
-}
-func performToken(client *http.Client, base, method, path, body, key, contentType, token string) (response, error) {
-	req, err := http.NewRequest(method, base+"/api/v1"+path, strings.NewReader(body))
+	req, err := http.NewRequest(method, base+"/api"+path, strings.NewReader(body))
 	if err != nil {
 		return response{}, err
 	}
@@ -119,7 +116,6 @@ func performToken(client *http.Client, base, method, path, body, key, contentTyp
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
 	res, err := client.Do(req)
 	if err != nil {
 		return response{}, err
@@ -202,12 +198,6 @@ func strptr(p *string) string {
 		return ""
 	}
 	return *p
-}
-
-func testAPI(db *sql.DB) http.Handler {
-	return api.NewWithAuth(db, api.StaticTokens(map[string]api.Principal{
-		"test-token": {Scope: "test-client", Read: true, Manage: true, Command: true},
-	}))
 }
 
 // Test DTOs are independent of runtime structs. OpenAPI validates the complete
@@ -385,6 +375,9 @@ func TestIntegrationAll19RoutesAndStableIdentity(t *testing.T) {
 	if len(decode[pageDTO[batteryDTO]](t, h.get("/batteries?location=99.99.99")).Items) != 0 {
 		t.Fatal("empty exact address should have no batteries")
 	}
+	if h.count("SELECT count(*) FROM battery_operations WHERE request_scope<>'pandora' OR device_code IS NOT NULL") != 0 {
+		t.Fatal("public API operations must use one request scope and no device identity")
+	}
 	h.contract.assertAllOperations(t)
 }
 
@@ -410,7 +403,7 @@ func (h *harness) parallel(a, b concurrentCommand) [2]response {
 		if err := db.QueryRow("SELECT pg_backend_pid()").Scan(&pids[i]); err != nil {
 			h.t.Fatal(err)
 		}
-		servers[i] = httptest.NewServer(testAPI(db))
+		servers[i] = httptest.NewServer(api.New(db))
 		defer servers[i].Close()
 	}
 	if pids[0] == pids[1] {
@@ -587,7 +580,7 @@ func TestIntegrationLostHTTPResponseAfterCommit(t *testing.T) {
 	// Handler commits first, then a wrapper closes TCP without sending its body.
 	drop := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rr := httptest.NewRecorder()
-		testAPI(h.app).ServeHTTP(rr, r)
+		api.New(h.app).ServeHTTP(rr, r)
 		captured <- response{rr.Code, bytes.Clone(rr.Body.Bytes()), rr.Header().Clone(), r}
 		conn, _, err := w.(http.Hijacker).Hijack()
 		if err == nil {
@@ -715,104 +708,45 @@ func TestIntegrationValidationAndCursor(t *testing.T) {
 	errorCode(t, h.request("GET", "/batteries?cursor="+url.QueryEscape(*page.NextCursor), nil, "", 400), "INVALID_REQUEST")
 }
 
-func TestIntegrationIdempotencyScopeSurvivesTokenRotation(t *testing.T) {
+func TestIntegrationPublicAPIAndIgnoredAuthorizationHeader(t *testing.T) {
 	h := newHarness(t)
-	auth := api.StaticTokens(map[string]api.Principal{
-		"before-rotation":  {Scope: "stable-client", Read: true, Manage: true},
-		"after-rotation":   {Scope: "stable-client", Read: true, Manage: true},
-		"different-client": {Scope: "other-client", Read: true, Manage: true},
-	})
-	srv := httptest.NewServer(api.NewWithAuth(h.app, auth))
-	defer srv.Close()
+	f := h.fixture()
+	list := h.get("/employees/" + f.ivan.ID + "/credentials")
+	if list.request.Header.Get("Authorization") != "" {
+		t.Fatal("public API test unexpectedly sent an Authorization header")
+	}
 	key := uuid.NewString()
-	var original response
-	for i, token := range []string{"before-rotation", "after-rotation", "different-client"} {
-		res, err := performToken(srv.Client(), srv.URL, "POST", "/employees", `{"display_name":"Scoped"}`, key, "application/json", token)
+	body := `{"display_name":"Открытый API"}`
+	original := h.raw("POST", "/employees", body, key, "application/json", 201)
+	for _, header := range []string{"Bearer ignored-value", "Basic ignored-value", "malformed"} {
+		req, err := http.NewRequest("POST", h.server.URL+"/api/employees", strings.NewReader(body))
 		if err != nil {
 			t.Fatal(err)
 		}
-		h.check(res, 201)
-		if i == 0 {
-			original = res
+		req.Header.Set("Authorization", header)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", key)
+		res, err := h.server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
 		}
-		if i == 1 {
-			equalJSON(t, original, res)
-			if res.header.Get("Idempotency-Replayed") != "true" {
-				t.Fatal("token rotation broke stable request scope")
-			}
+		data, err := io.ReadAll(res.Body)
+		res.Body.Close()
+		if err != nil {
+			t.Fatal(err)
 		}
-		if i == 2 && decode[employeeDTO](t, original).ID == decode[employeeDTO](t, res).ID {
-			t.Fatal("different principals shared idempotency result")
+		replay := response{res.StatusCode, data, res.Header, req}
+		h.check(replay, 201)
+		equalJSON(t, original, replay)
+		if replay.header.Get("Idempotency-Replayed") != "true" {
+			t.Fatal("Authorization header changed public request scope")
 		}
 	}
-	if h.count("SELECT count(*) FROM employees") != 2 || h.count("SELECT count(*) FROM idempotency_requests WHERE key=$1", key) != 2 {
-		t.Fatal("wrong idempotency scope count")
+	if h.count("SELECT count(*) FROM idempotency_requests WHERE key=$1 AND scope='pandora'", key) != 1 || h.count("SELECT count(*) FROM employees") != 3 {
+		t.Fatal("public requests did not share the fixed request scope")
 	}
 }
-func TestIntegrationAuthenticationAndPermissions(t *testing.T) {
-	h := newHarness(t)
-	h.fixture()
-	for _, token := range []string{"", "unknown", "read-only", "command-only"} {
-		t.Run(token, func(t *testing.T) {
-			adapter := api.StaticTokens(map[string]api.Principal{"read-only": {Scope: "reader", Read: true}, "command-only": {Scope: "operator", Read: true, Command: true}})
-			srv := httptest.NewServer(api.NewWithAuth(h.app, adapter))
-			defer srv.Close()
-			paths := []string{"/employees", "/employees"}
-			methods := []string{"GET", "POST"}
-			for i, path := range paths {
-				req, err := http.NewRequest(methods[i], srv.URL+"/api/v1"+path, strings.NewReader(`{"display_name":"Denied"}`))
-				if err != nil {
-					t.Fatal(err)
-				}
-				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("Idempotency-Key", uuid.NewString())
-				if token != "" {
-					req.Header.Set("Authorization", "Bearer "+token)
-				}
-				res, err := srv.Client().Do(req)
-				if err != nil {
-					t.Fatal(err)
-				}
-				body, _ := io.ReadAll(res.Body)
-				res.Body.Close()
-				r := response{res.StatusCode, body, res.Header, req}
-				want := 401
-				if token == "read-only" || token == "command-only" {
-					want = 200
-					if i == 1 {
-						want = 403
-					}
-				}
-				h.check(r, want)
-			}
-			if token == "read-only" {
-				req, _ := http.NewRequest("GET", srv.URL+"/api/v1/employees/"+decode[pageDTO[employeeDTO]](t, h.get("/employees")).Items[0].ID+"/credentials", nil)
-				req.Header.Set("Authorization", "Bearer "+token)
-				res, err := srv.Client().Do(req)
-				if err != nil {
-					t.Fatal(err)
-				}
-				body, _ := io.ReadAll(res.Body)
-				res.Body.Close()
-				h.check(response{res.StatusCode, body, res.Header, req}, 403)
-			}
-		})
-	}
-	if h.count("SELECT count(*) FROM employees") != 2 {
-		t.Fatal("unauthorized mutation persisted")
-	}
-	srv := httptest.NewServer(api.New(h.app))
-	defer srv.Close()
-	req, _ := http.NewRequest("GET", srv.URL+"/api/v1/employees", nil)
-	res, err := srv.Client().Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer res.Body.Close()
-	if res.StatusCode != 401 {
-		t.Fatal("default API constructor must deny access")
-	}
-}
+
 func TestIntegrationDatabaseImmutableGuardsAndLeastPrivilege(t *testing.T) {
 	h := newHarness(t)
 	f := h.fixture()

@@ -4,10 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"github.com/jackc/pgx/v5/pgconn"
 	"net"
 	"net/http"
 	"strings"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type APIError struct {
@@ -16,43 +17,79 @@ type APIError struct {
 	Message string `json:"message"`
 }
 
-func (e *APIError) Error() string                 { return e.Code + ": " + e.Message }
-func fail(status int, code, message string) error { return &APIError{status, code, message} }
-func invalid(message string) error                { return fail(400, "INVALID_REQUEST", message) }
-func conflict(code string) error {
+func (err *APIError) Error() string { return err.Code + ": " + err.Message }
+
+func fail(status int, code, message string) *APIError {
+	return &APIError{Status: status, Code: code, Message: message}
+}
+
+func invalid(message string) *APIError { return fail(400, "INVALID_REQUEST", message) }
+func conflict(code string) *APIError {
 	return fail(409, code, "Конфликт состояния или уникальности")
 }
-func notFound() error { return fail(404, "RESOURCE_NOT_FOUND", "Ресурс не найден") }
+func notFound() *APIError { return fail(404, "RESOURCE_NOT_FOUND", "Ресурс не найден") }
+
 func classify(err error) *APIError {
-	var a *APIError
-	if errors.As(err, &a) {
-		return a
+	var apiError *APIError
+	if errors.As(err, &apiError) {
+		return apiError
 	}
 	if errors.Is(err, sql.ErrNoRows) {
-		return notFound().(*APIError)
+		return notFound()
 	}
-	var pg *pgconn.PgError
-	var ne net.Error
-	if errors.As(err, &pg) {
-		if pg.Code == "23505" {
-			codes := map[string]string{"batteries_one_per_location_uq": "LOCATION_OCCUPIED", "batteries_inventory_code_key": "INVENTORY_CODE_EXISTS", "credentials_active_value_uq": "ACTIVE_CREDENTIAL_EXISTS", "employees_personnel_number_key": "PERSONNEL_NUMBER_EXISTS"}
-			if code, ok := codes[pg.ConstraintName]; ok {
-				return conflict(code).(*APIError)
+	var databaseError *pgconn.PgError
+	if errors.As(err, &databaseError) {
+		if databaseError.Code == "23505" {
+			conflicts := map[string]string{
+				"batteries_one_per_location_uq":  "LOCATION_OCCUPIED",
+				"batteries_inventory_code_key":   "INVENTORY_CODE_EXISTS",
+				"credentials_active_value_uq":    "ACTIVE_CREDENTIAL_EXISTS",
+				"employees_personnel_number_key": "PERSONNEL_NUMBER_EXISTS",
+			}
+			if code, known := conflicts[databaseError.ConstraintName]; known {
+				return conflict(code)
 			}
 		}
-		if pg.Code == "40P01" || pg.Code == "55P03" || pg.Code == "57014" || pg.Code == "40001" || strings.HasPrefix(pg.Code, "08") || strings.HasPrefix(pg.Code, "53") || strings.HasPrefix(pg.Code, "57P") {
-			return fail(503, "TEMPORARILY_UNAVAILABLE", "Повторите запрос с тем же ключом").(*APIError)
+		if temporaryDatabaseError(databaseError.Code) {
+			return fail(503, "TEMPORARILY_UNAVAILABLE", "Повторите запрос с тем же ключом")
 		}
 	}
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) || errors.As(err, &ne) {
-		return fail(503, "TEMPORARILY_UNAVAILABLE", "Повторите запрос с тем же ключом").(*APIError)
+	var networkError net.Error
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) || errors.As(err, &networkError) {
+		return fail(503, "TEMPORARILY_UNAVAILABLE", "Повторите запрос с тем же ключом")
 	}
-	return fail(500, "INTERNAL_ERROR", "Внутренняя ошибка").(*APIError)
+	return fail(500, "INTERNAL_ERROR", "Внутренняя ошибка")
 }
-func errorBody(a *APIError, requestID string) any {
-	return map[string]any{"error": map[string]any{"code": a.Code, "message": a.Message, "details": map[string]any{}, "request_id": requestID}}
+
+func temporaryDatabaseError(code string) bool {
+	switch code {
+	case "40P01", "55P03", "57014", "40001":
+		return true // Deadlock, lock timeout, statement timeout or serialization failure.
+	}
+	return strings.HasPrefix(code, "08") || strings.HasPrefix(code, "53") || strings.HasPrefix(code, "57P")
 }
+
+type errorResponse struct {
+	Error errorDetails `json:"error"`
+}
+
+type errorDetails struct {
+	Code      string         `json:"code"`
+	Message   string         `json:"message"`
+	Details   map[string]any `json:"details"`
+	RequestID string         `json:"request_id"`
+}
+
+func errorBody(err *APIError, requestID string) errorResponse {
+	return errorResponse{Error: errorDetails{
+		Code:      err.Code,
+		Message:   err.Message,
+		Details:   map[string]any{},
+		RequestID: requestID,
+	}}
+}
+
 func writeError(w http.ResponseWriter, err error) {
-	a := classify(err)
-	writeJSON(w, a.Status, errorBody(a, w.Header().Get("X-Request-ID")))
+	apiError := classify(err)
+	writeJSON(w, apiError.Status, errorBody(apiError, w.Header().Get("X-Request-ID")))
 }

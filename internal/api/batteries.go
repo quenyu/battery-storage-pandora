@@ -6,93 +6,134 @@ import (
 	"net/http"
 )
 
-func registerBattery(ctx context.Context, tx *sql.Tx, r *http.Request, in input) (any, error) {
-	eid, cid, err := commandActor(ctx, tx, in.str("actor_credential_value"))
+func registerBattery(ctx context.Context, tx *sql.Tx, request *http.Request, values input) (any, error) {
+	employeeID, credentialID, err := commandActor(ctx, tx, values.str("actor_credential_value"))
 	if err != nil {
 		return nil, err
 	}
-	id := newID()
-	var serial any
-	if v, ok := in["serial_number"]; ok {
-		serial = v
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO batteries(id,inventory_code,serial_number,status,current_location,version) VALUES($1,$2,$3,'STORED',$4,1)`, id, in.str("inventory_code"), serial, in.str("destination_location")); err != nil {
+	batteryID := newID()
+	destination := values.str("destination_location")
+	_, err = tx.ExecContext(ctx, `
+        INSERT INTO batteries (id, inventory_code, serial_number, status, current_location, version)
+        VALUES ($1, $2, $3, 'STORED', $4, 1)
+    `, batteryID, values.str("inventory_code"), values["serial_number"], destination)
+	if err != nil {
 		return nil, err
 	}
-	dest := in.str("destination_location")
-	o := Operation{ID: newID(), BatteryID: id, BatteryVersion: 1, Type: "STORE", ActorEmployeeID: eid, CredentialID: cid, DestinationStatus: "STORED", DestinationLocation: &dest}
-	return finishBatteryCommand(ctx, tx, r, o)
+	operation := Operation{
+		ID:                  newID(),
+		BatteryID:           batteryID,
+		BatteryVersion:      1,
+		Type:                "STORE",
+		ActorEmployeeID:     employeeID,
+		CredentialID:        credentialID,
+		DestinationStatus:   "STORED",
+		DestinationLocation: &destination,
+	}
+	return finishBatteryCommand(ctx, tx, request.Header.Get("Idempotency-Key"), operation)
 }
+
 func batteryCommand(kind string) command {
-	return func(ctx context.Context, tx *sql.Tx, r *http.Request, in input) (any, error) {
-		eid, cid, err := commandActor(ctx, tx, in.str("actor_credential_value"))
+	return func(ctx context.Context, tx *sql.Tx, request *http.Request, values input) (any, error) {
+		employeeID, credentialID, err := commandActor(ctx, tx, values.str("actor_credential_value"))
 		if err != nil {
 			return nil, err
 		}
-		b, err := scanBattery(tx.QueryRowContext(ctx, batterySelect+` WHERE b.id=$1 FOR UPDATE`, r.PathValue("battery_id")))
+		battery, err := scanBattery(tx.QueryRowContext(ctx,
+			batterySelect+` WHERE b.id = $1 FOR UPDATE`, request.PathValue("battery_id")))
 		if err != nil {
 			return nil, err
 		}
-		if expected, ok := in["expected_version"]; ok && expected.(int64) != b.Version {
+		if expected, supplied := values["expected_version"]; supplied && expected.(int64) != battery.Version {
 			return nil, conflict("STATE_VERSION_MISMATCH")
 		}
-		if observed, ok := in["observed_source_location"]; ok && (b.CurrentLocation == nil || *b.CurrentLocation != observed.(string)) {
-			return nil, conflict("SOURCE_MISMATCH")
+		if observed, supplied := values["observed_source_location"]; supplied {
+			if battery.CurrentLocation == nil || *battery.CurrentLocation != observed.(string) {
+				return nil, conflict("SOURCE_MISMATCH")
+			}
 		}
-		o := Operation{ID: newID(), BatteryID: b.ID, BatteryVersion: b.Version + 1, Type: kind, ActorEmployeeID: eid, CredentialID: cid, SourceStatus: &b.Status, SourceLocation: b.CurrentLocation, SourceHolderEmployeeID: b.CurrentHolderEmployeeID}
+		operation := Operation{
+			ID:                     newID(),
+			BatteryID:              battery.ID,
+			BatteryVersion:         battery.Version + 1,
+			Type:                   kind,
+			ActorEmployeeID:        employeeID,
+			CredentialID:           credentialID,
+			SourceStatus:           &battery.Status,
+			SourceLocation:         battery.CurrentLocation,
+			SourceHolderEmployeeID: battery.CurrentHolderEmployeeID,
+		}
+		destination := values.str("destination_location")
 		switch kind {
 		case "TAKE":
-			if b.Status == "ISSUED" {
+			if battery.Status == "ISSUED" {
 				return nil, conflict("BATTERY_ALREADY_ISSUED")
 			}
-			if b.Status != "STORED" {
+			if battery.Status != "STORED" {
 				return nil, conflict("INVALID_BATTERY_STATE")
 			}
-			o.DestinationStatus = "ISSUED"
-			o.DestinationHolderEmployeeID = &eid
+			operation.DestinationStatus = "ISSUED"
+			operation.DestinationHolderEmployeeID = &employeeID
 		case "RETURN":
-			if b.Status != "ISSUED" {
+			if battery.Status != "ISSUED" {
 				return nil, conflict("INVALID_BATTERY_STATE")
 			}
-			if b.CurrentHolderEmployeeID == nil || *b.CurrentHolderEmployeeID != eid {
+			if battery.CurrentHolderEmployeeID == nil || *battery.CurrentHolderEmployeeID != employeeID {
 				return nil, fail(403, "RETURN_NOT_ALLOWED", "Вернуть АКБ может только взявший сотрудник")
 			}
-			dest := in.str("destination_location")
-			o.DestinationStatus = "STORED"
-			o.DestinationLocation = &dest
+			operation.DestinationStatus = "STORED"
+			operation.DestinationLocation = &destination
 		case "MOVE":
-			if b.Status != "STORED" {
+			if battery.Status != "STORED" {
 				return nil, conflict("INVALID_BATTERY_STATE")
 			}
-			dest := in.str("destination_location")
-			if b.CurrentLocation != nil && *b.CurrentLocation == dest {
+			if battery.CurrentLocation != nil && *battery.CurrentLocation == destination {
 				return nil, conflict("SAME_LOCATION")
 			}
-			o.DestinationStatus = "STORED"
-			o.DestinationLocation = &dest
+			operation.DestinationStatus = "STORED"
+			operation.DestinationLocation = &destination
 		default:
 			return nil, fail(500, "INTERNAL_ERROR", "Неизвестная команда")
 		}
-		// The unique index is authoritative for destination occupancy across batteries.
-		if _, err := tx.ExecContext(ctx, `UPDATE batteries SET status=$2,current_location=$3,current_holder_employee_id=$4,version=$5 WHERE id=$1`, b.ID, o.DestinationStatus, o.DestinationLocation, o.DestinationHolderEmployeeID, o.BatteryVersion); err != nil {
+
+		// UNIQUE current_location resolves races between different batteries.
+		_, err = tx.ExecContext(ctx, `
+            UPDATE batteries
+            SET status = $2, current_location = $3, current_holder_employee_id = $4, version = $5
+            WHERE id = $1
+        `, battery.ID, operation.DestinationStatus, operation.DestinationLocation,
+			operation.DestinationHolderEmployeeID, operation.BatteryVersion)
+		if err != nil {
 			return nil, err
 		}
-		return finishBatteryCommand(ctx, tx, r, o)
+		return finishBatteryCommand(ctx, tx, request.Header.Get("Idempotency-Key"), operation)
 	}
 }
-func finishBatteryCommand(ctx context.Context, tx *sql.Tx, r *http.Request, o Operation) (CommandResult, error) {
-	p := r.Context().Value(principalKey{}).(Principal)
-	o.DeviceCode = p.DeviceCode
-	var result CommandResult
-	err := tx.QueryRowContext(ctx, `INSERT INTO battery_operations(id,battery_id,battery_version,type,actor_employee_id,credential_id,source_status,destination_status,source_location,destination_location,source_holder_employee_id,destination_holder_employee_id,device_code,request_scope,request_key) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING occurred_at`, o.ID, o.BatteryID, o.BatteryVersion, o.Type, o.ActorEmployeeID, o.CredentialID, o.SourceStatus, o.DestinationStatus, o.SourceLocation, o.DestinationLocation, o.SourceHolderEmployeeID, o.DestinationHolderEmployeeID, o.DeviceCode, p.Scope, r.Header.Get("Idempotency-Key")).Scan(&o.OccurredAt)
+
+func finishBatteryCommand(ctx context.Context, tx *sql.Tx, requestKey string, operation Operation) (CommandResult, error) {
+	err := tx.QueryRowContext(ctx, `
+        INSERT INTO battery_operations (
+            id, battery_id, battery_version, type, actor_employee_id, credential_id,
+            source_status, destination_status, source_location, destination_location,
+            source_holder_employee_id, destination_holder_employee_id, request_scope, request_key
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        RETURNING occurred_at
+    `, operation.ID, operation.BatteryID, operation.BatteryVersion, operation.Type,
+		operation.ActorEmployeeID, operation.CredentialID, operation.SourceStatus, operation.DestinationStatus,
+		operation.SourceLocation, operation.DestinationLocation, operation.SourceHolderEmployeeID,
+		operation.DestinationHolderEmployeeID, requestScope, requestKey).Scan(&operation.OccurredAt)
 	if err != nil {
-		return result, err
+		return CommandResult{}, err
 	}
-	o.OccurredAt = o.OccurredAt.UTC()
-	if _, err := tx.ExecContext(ctx, `UPDATE batteries SET updated_at=$2 WHERE id=$1`, o.BatteryID, o.OccurredAt); err != nil {
-		return result, err
+	operation.OccurredAt = operation.OccurredAt.UTC()
+	// State and history use the exact same database timestamp.
+	if _, err := tx.ExecContext(ctx, `UPDATE batteries SET updated_at = $2 WHERE id = $1`,
+		operation.BatteryID, operation.OccurredAt); err != nil {
+		return CommandResult{}, err
 	}
-	result.Operation = o
-	result.Battery, err = getBattery(ctx, tx, o.BatteryID)
-	return result, err
+	battery, err := getBattery(ctx, tx, operation.BatteryID)
+	if err != nil {
+		return CommandResult{}, err
+	}
+	return CommandResult{Battery: battery, Operation: operation}, nil
 }

@@ -1,4 +1,4 @@
-# Local development only. Choose this OR the portable Windows scripts.
+# Local PostgreSQL. Choose this OR the portable Windows scripts.
 services:
   postgres:
     image: postgres:17.11-alpine

@@ -11,14 +11,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 )
-
-var addressFilterPattern = regexp.MustCompile(`^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$`)
 
 type filters struct {
 	limit  int
@@ -87,7 +84,7 @@ func parseFilters(r *http.Request, allowed string) (filters, error) {
 			if !utf8.ValidString(s) || strings.TrimSpace(s) != s || strings.IndexFunc(s, func(r rune) bool { return r < 32 || r == 127 }) >= 0 {
 				return f, fail(422, "VALIDATION_FAILED", "Текстовый фильтр не должен содержать крайние пробелы или управляющие символы")
 			}
-			if key == "location" && !addressFilterPattern.MatchString(s) {
+			if key == "location" && !locationPattern.MatchString(s) {
 				return f, fail(422, "VALIDATION_FAILED", "Адрес должен иметь вид шкаф.полка.ячейка: положительные числа без ведущих нулей")
 			}
 		case "from", "to":

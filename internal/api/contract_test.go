@@ -38,7 +38,7 @@ func newContractChecker(t *testing.T) *contractChecker {
 }
 func (c *contractChecker) validate(t *testing.T, res response) {
 	t.Helper()
-	// The authoritative server is same-origin /api/v1. kin-openapi's legacy
+	// The authoritative server is same-origin /api. kin-openapi's legacy
 	// router matches relative server URLs against relative request URLs.
 	request := res.request.Clone(context.Background())
 	requestURL := *request.URL
@@ -82,8 +82,14 @@ func TestOpenAPIContractAndExamples(t *testing.T) {
 	if !bytes.Equal(source, assets.OpenAPI) {
 		t.Fatal("embedded OpenAPI differs from the editable source")
 	}
-	if len(c.doc.Servers) != 1 || c.doc.Servers[0].URL != "/api/v1" {
-		t.Fatal("Swagger requests must use same-origin /api/v1")
+	if len(c.doc.Servers) != 1 || c.doc.Servers[0].URL != "/api" {
+		t.Fatal("Swagger requests must use same-origin /api")
+	}
+	if c.doc.Info.Title != "Pandora — учёт АКБ" || c.doc.Info.Description != "" {
+		t.Fatal("Swagger must use the agreed simple title without an info description")
+	}
+	if len(c.doc.Security) != 0 || len(c.doc.Components.SecuritySchemes) != 0 {
+		t.Fatal("public API contract must not declare authentication")
 	}
 	if len(c.doc.Paths.Map()) != 15 || len(c.doc.Components.Schemas) != 20 {
 		t.Fatalf("unexpected contract shape: %d paths %d schemas", len(c.doc.Paths.Map()), len(c.doc.Components.Schemas))
@@ -91,7 +97,13 @@ func TestOpenAPIContractAndExamples(t *testing.T) {
 	seen := map[string]bool{}
 	operations, commands, examples := 0, 0, 0
 	checkContent := func(label string, content openapi3.Content) {
+		if content["application/json"] == nil || content["application/json"].Schema == nil {
+			t.Errorf("%s must declare its application/json schema", label)
+		}
 		for _, media := range content {
+			if media.Example == nil && len(media.Examples) == 0 {
+				t.Errorf("%s has no request/response example", label)
+			}
 			check := func(value any) {
 				if value == nil {
 					return
@@ -126,6 +138,12 @@ func TestOpenAPIContractAndExamples(t *testing.T) {
 				t.Errorf("missing/duplicate operationId at %s %s", method, path)
 			}
 			seen[op.OperationID] = true
+			if op.Security != nil && len(*op.Security) != 0 {
+				t.Errorf("%s %s unexpectedly requires authentication", method, path)
+			}
+			if op.Responses.Value("401") != nil {
+				t.Errorf("%s %s documents a removed authentication response", method, path)
+			}
 			if (method == "POST" || method == "PATCH") && op.OperationID != "resolveCredential" {
 				commands++
 				hasKey := false
@@ -148,9 +166,6 @@ func TestOpenAPIContractAndExamples(t *testing.T) {
 	}
 	if operations != 19 || commands != 8 {
 		t.Fatalf("got %d operations / %d commands; want 19 / 8", operations, commands)
-	}
-	if examples < 180 {
-		t.Errorf("only %d examples checked; expected at least 180", examples)
 	}
 	t.Logf("OpenAPI valid: %d paths, %d operations, %d schemas, %d example occurrences checked", len(c.doc.Paths.Map()), operations, len(c.doc.Components.Schemas), examples)
 }
