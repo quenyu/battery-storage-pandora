@@ -1,0 +1,1541 @@
+openapi: 3.0.3
+info:
+  title: Pandora Battery Storage — учебный API
+  version: 1.0.0
+  description: 'Работающий локальный Go-сервис учёта АКБ. Демонстрация без ролей, авторизации и API-ключей;
+    employee_barcode указывает участника, не аутентифицирует его. Все POST/PUT требуют Idempotency-Key. Ограничение
+    тела 64 KiB. Все входные объекты запрещают неизвестные поля и null; дублирующиеся JSON-ключи отклоняются. UUID
+    нормализуются к lowercase; штрихкоды сравниваются точно с сохранением ведущих нулей. Изменяющие маршруты не
+    принимают query-параметры. Сервер присваивает время в UTC. Правила транзакций и повторов: architecture.md. Swagger
+    UI доступен по /swagger/; контракт: /openapi.yaml. UI использует этот файл как единый источник
+    и поддерживает Try it out с Idempotency-Key.'
+servers:
+- url: /api/v1
+  description: Бизнес-API на том же origin, что и Swagger UI; локально http://127.0.0.1:8080/api/v1
+tags:
+- name: Сотрудники
+- name: Хранение
+- name: Учёт
+- name: История
+paths:
+  /employees:
+    post:
+      operationId: createEmployee
+      tags:
+      - Сотрудники
+      summary: Создать сотрудника со штрихкодом
+      description: Сотрудник и первый действующий штрихкод создаются в одной транзакции. Код уникален за всю историю.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: Результат команды; при повторе может описывать прошлое состояние.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+              example: &id001
+                id: 00000000-0000-4000-8000-000000000001
+                name: Иван Петров
+                created_at: '2026-09-28T12:00:00Z'
+                active_credential:
+                  id: 00000000-0000-4000-8000-000000000002
+                  employee_id: 00000000-0000-4000-8000-000000000001
+                  barcode: '00001234'
+                  created_at: '2026-09-28T12:00:00Z'
+                  revoked_at: null
+        '400':
+          $ref: '#/components/responses/Error400'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '415':
+          $ref: '#/components/responses/Error415'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEmployee'
+            example:
+              name: Иван Петров
+              barcode: '00001234'
+    get:
+      operationId: listEmployees
+      tags:
+      - Сотрудники
+      summary: Список сотрудников
+      description: Список сотрудников
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Успешное чтение.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeePage'
+              example:
+                items:
+                - *id001
+                limit: 50
+                offset: 0
+        '400':
+          $ref: '#/components/responses/Error400'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+  /employees/{employee_id}:
+    get:
+      operationId: getEmployee
+      tags:
+      - Сотрудники
+      summary: Получить сотрудника и действующий штрихкод
+      description: Получить сотрудника и действующий штрихкод
+      parameters:
+      - name: employee_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Успешное чтение.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+              example: *id001
+        '400':
+          $ref: '#/components/responses/Error400'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '404':
+          $ref: '#/components/responses/Error404'
+  /employees/{employee_id}/credential:
+    put:
+      operationId: replaceCredential
+      tags:
+      - Сотрудники
+      summary: Заменить действующий штрихкод
+      description: Старый штрихкод отзывается, история сохраняется. Тот же действующий код — успешная операция без
+        изменений. Ранее использованный код — 409 BARCODE_EXISTS.
+      parameters:
+      - name: employee_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Результат команды; при повторе может описывать прошлое состояние.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Credential'
+              example:
+                id: 00000000-0000-4000-8000-000000000009
+                employee_id: 00000000-0000-4000-8000-000000000001
+                barcode: '00005678'
+                created_at: '2026-09-28T12:00:00Z'
+                revoked_at: null
+        '400':
+          $ref: '#/components/responses/Error400'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '415':
+          $ref: '#/components/responses/Error415'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplaceCredential'
+            example:
+              barcode: '00005678'
+  /cabinets:
+    post:
+      operationId: createCabinet
+      tags:
+      - Хранение
+      summary: Создать шкаф
+      description: Создать шкаф
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: Результат команды; при повторе может описывать прошлое состояние.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cabinet'
+              example: &id002
+                id: 00000000-0000-4000-8000-000000000003
+                number: 1
+        '400':
+          $ref: '#/components/responses/Error400'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '415':
+          $ref: '#/components/responses/Error415'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNumbered'
+            example:
+              number: 1
+    get:
+      operationId: listCabinets
+      tags:
+      - Хранение
+      summary: Список шкафов
+      description: Список шкафов
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Успешное чтение.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CabinetPage'
+              example:
+                items:
+                - *id002
+                limit: 50
+                offset: 0
+        '400':
+          $ref: '#/components/responses/Error400'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+  /cabinets/{cabinet_id}/shelves:
+    post:
+      operationId: createShelf
+      tags:
+      - Хранение
+      summary: Создать полку шкафа
+      description: Создать полку шкафа
+      parameters:
+      - name: cabinet_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: Результат команды; при повторе может описывать прошлое состояние.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Shelf'
+              example: &id003
+                id: 00000000-0000-4000-8000-000000000004
+                cabinet_id: 00000000-0000-4000-8000-000000000003
+                number: 1
+        '400':
+          $ref: '#/components/responses/Error400'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '415':
+          $ref: '#/components/responses/Error415'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNumbered'
+            example:
+              number: 1
+    get:
+      operationId: listShelves
+      tags:
+      - Хранение
+      summary: Список полок шкафа
+      description: Список полок шкафа
+      parameters:
+      - name: cabinet_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Успешное чтение.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShelfPage'
+              example:
+                items:
+                - *id003
+                limit: 50
+                offset: 0
+        '400':
+          $ref: '#/components/responses/Error400'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '404':
+          $ref: '#/components/responses/Error404'
+  /shelves/{shelf_id}/cells:
+    post:
+      operationId: createCell
+      tags:
+      - Хранение
+      summary: Создать ячейку полки
+      description: Создать ячейку полки
+      parameters:
+      - name: shelf_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: Результат команды; при повторе может описывать прошлое состояние.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cell'
+              example: &id004
+                id: 00000000-0000-4000-8000-000000000005
+                shelf_id: 00000000-0000-4000-8000-000000000004
+                number: 1
+                address: 1.1.1
+                battery_id: null
+        '400':
+          $ref: '#/components/responses/Error400'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '415':
+          $ref: '#/components/responses/Error415'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNumbered'
+            example:
+              number: 1
+    get:
+      operationId: listCells
+      tags:
+      - Хранение
+      summary: Список ячеек с адресами и занятостью
+      description: Список ячеек с адресами и занятостью
+      parameters:
+      - name: shelf_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Успешное чтение.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CellPage'
+              example:
+                items:
+                - *id004
+                limit: 50
+                offset: 0
+        '400':
+          $ref: '#/components/responses/Error400'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '404':
+          $ref: '#/components/responses/Error404'
+  /batteries:
+    post:
+      operationId: registerBattery
+      tags:
+      - Учёт
+      summary: Зарегистрировать АКБ и разместить в ячейке
+      description: Атомарно создаёт АКБ stored версии 1 и операцию register. Ячейка должна быть свободной. Автор
+        определяется по действующему штрихкоду.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: Результат команды; при повторе может описывать прошлое состояние.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+              example:
+                battery: &id005
+                  id: 00000000-0000-4000-8000-000000000006
+                  inventory_code: AKB-0001
+                  status: stored
+                  cell_id: 00000000-0000-4000-8000-000000000005
+                  holder_employee_id: null
+                  version: 1
+                  last_operation_id: 00000000-0000-4000-8000-000000000007
+                  created_at: '2026-09-28T12:00:00Z'
+                  updated_at: '2026-09-28T12:00:00Z'
+                operation: &id006
+                  id: 00000000-0000-4000-8000-000000000007
+                  battery_id: 00000000-0000-4000-8000-000000000006
+                  battery_version: 1
+                  type: register
+                  actor_employee_id: 00000000-0000-4000-8000-000000000001
+                  credential_id: 00000000-0000-4000-8000-000000000002
+                  from_cell_id: null
+                  to_cell_id: 00000000-0000-4000-8000-000000000005
+                  from_holder_employee_id: null
+                  to_holder_employee_id: null
+                  reason: null
+                  occurred_at: '2026-09-28T12:00:00Z'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '415':
+          $ref: '#/components/responses/Error415'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterBattery'
+            example:
+              inventory_code: AKB-0001
+              cell_id: 00000000-0000-4000-8000-000000000005
+              employee_barcode: '00001234'
+    get:
+      operationId: listBatteries
+      tags:
+      - Учёт
+      summary: Список и поиск АКБ
+      description: Фильтры соединяются AND; отсутствие совпадений даёт пустой список. Сортировка id ASC.
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Offset'
+      - name: status
+        in: query
+        required: false
+        description: ''
+        schema:
+          type: string
+          enum:
+          - stored
+          - issued
+          - lost
+      - name: holder_employee_id
+        in: query
+        required: false
+        description: Только текущий держатель, не история.
+        schema:
+          type: string
+          format: uuid
+      - name: cell_id
+        in: query
+        required: false
+        description: Только текущее место.
+        schema:
+          type: string
+          format: uuid
+      - name: inventory_code
+        in: query
+        required: false
+        description: Точное совпадение.
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]{1,128}$
+      responses:
+        '200':
+          description: Успешное чтение.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatteryPage'
+              example:
+                items:
+                - *id005
+                limit: 50
+                offset: 0
+        '400':
+          $ref: '#/components/responses/Error400'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+  /batteries/{battery_id}:
+    get:
+      operationId: getBattery
+      tags:
+      - Учёт
+      summary: Текущее состояние АКБ
+      description: Для lost текущие cell_id и holder_employee_id равны null. Последнее известное положение содержится
+        в операции last_operation_id.
+      parameters:
+      - name: battery_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Успешное чтение.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Battery'
+              example: *id005
+        '400':
+          $ref: '#/components/responses/Error400'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '404':
+          $ref: '#/components/responses/Error404'
+  /batteries/{battery_id}/checkout:
+    post:
+      operationId: checkoutBattery
+      tags:
+      - Учёт
+      summary: Самостоятельно получить АКБ
+      description: Только stored → issued. Держатель совпадает с сотрудником по предъявленному штрихкоду. Повтор
+        новой командой после выдачи — 409 INVALID_TRANSITION.
+      parameters:
+      - name: battery_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: Результат команды; при повторе может описывать прошлое состояние.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+              example:
+                battery:
+                  id: 00000000-0000-4000-8000-000000000006
+                  inventory_code: AKB-0001
+                  status: issued
+                  cell_id: null
+                  holder_employee_id: 00000000-0000-4000-8000-000000000001
+                  version: 2
+                  last_operation_id: 00000000-0000-4000-8000-000000000007
+                  created_at: '2026-09-28T12:00:00Z'
+                  updated_at: '2026-09-28T12:00:00Z'
+                operation:
+                  id: 00000000-0000-4000-8000-000000000007
+                  battery_id: 00000000-0000-4000-8000-000000000006
+                  battery_version: 2
+                  type: checkout
+                  actor_employee_id: 00000000-0000-4000-8000-000000000001
+                  credential_id: 00000000-0000-4000-8000-000000000002
+                  from_cell_id: 00000000-0000-4000-8000-000000000005
+                  to_cell_id: null
+                  from_holder_employee_id: null
+                  to_holder_employee_id: 00000000-0000-4000-8000-000000000001
+                  reason: null
+                  occurred_at: '2026-09-28T12:00:00Z'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '415':
+          $ref: '#/components/responses/Error415'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Checkout'
+            example:
+              employee_barcode: '00001234'
+  /batteries/{battery_id}/return:
+    post:
+      operationId: returnBattery
+      tags:
+      - Учёт
+      summary: Вернуть АКБ в свободную ячейку
+      description: Только issued → stored. Вернуть может любой сотрудник; предшествующий держатель берётся из состояния
+        АКБ. Любая свободная ячейка допустима.
+      parameters:
+      - name: battery_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: Результат команды; при повторе может описывать прошлое состояние.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+              example:
+                battery:
+                  id: 00000000-0000-4000-8000-000000000006
+                  inventory_code: AKB-0001
+                  status: stored
+                  cell_id: 00000000-0000-4000-8000-000000000008
+                  holder_employee_id: null
+                  version: 2
+                  last_operation_id: 00000000-0000-4000-8000-000000000007
+                  created_at: '2026-09-28T12:00:00Z'
+                  updated_at: '2026-09-28T12:00:00Z'
+                operation:
+                  id: 00000000-0000-4000-8000-000000000007
+                  battery_id: 00000000-0000-4000-8000-000000000006
+                  battery_version: 2
+                  type: return
+                  actor_employee_id: 00000000-0000-4000-8000-000000000001
+                  credential_id: 00000000-0000-4000-8000-000000000002
+                  from_cell_id: null
+                  to_cell_id: 00000000-0000-4000-8000-000000000008
+                  from_holder_employee_id: 00000000-0000-4000-8000-000000000001
+                  to_holder_employee_id: null
+                  reason: null
+                  occurred_at: '2026-09-28T12:00:00Z'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '415':
+          $ref: '#/components/responses/Error415'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReturnBattery'
+            example:
+              employee_barcode: '00001234'
+              target_cell_id: 00000000-0000-4000-8000-000000000008
+  /batteries/{battery_id}/move:
+    post:
+      operationId: moveBattery
+      tags:
+      - Учёт
+      summary: Переместить АКБ в другую ячейку
+      description: Только stored → stored. Целевая ячейка должна быть свободна и отличаться от исходной.
+      parameters:
+      - name: battery_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: Результат команды; при повторе может описывать прошлое состояние.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+              example:
+                battery:
+                  id: 00000000-0000-4000-8000-000000000006
+                  inventory_code: AKB-0001
+                  status: stored
+                  cell_id: 00000000-0000-4000-8000-000000000008
+                  holder_employee_id: null
+                  version: 2
+                  last_operation_id: 00000000-0000-4000-8000-000000000007
+                  created_at: '2026-09-28T12:00:00Z'
+                  updated_at: '2026-09-28T12:00:00Z'
+                operation:
+                  id: 00000000-0000-4000-8000-000000000007
+                  battery_id: 00000000-0000-4000-8000-000000000006
+                  battery_version: 2
+                  type: move
+                  actor_employee_id: 00000000-0000-4000-8000-000000000001
+                  credential_id: 00000000-0000-4000-8000-000000000002
+                  from_cell_id: 00000000-0000-4000-8000-000000000005
+                  to_cell_id: 00000000-0000-4000-8000-000000000008
+                  from_holder_employee_id: null
+                  to_holder_employee_id: null
+                  reason: null
+                  occurred_at: '2026-09-28T12:00:00Z'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '415':
+          $ref: '#/components/responses/Error415'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveBattery'
+            example:
+              employee_barcode: '00001234'
+              target_cell_id: 00000000-0000-4000-8000-000000000008
+  /batteries/{battery_id}/loss:
+    post:
+      operationId: lossBattery
+      tags:
+      - Учёт
+      summary: Отметить АКБ потерянной
+      description: stored/issued → lost. Любой сотрудник может отметить потерю с причиной. Предыдущее место либо
+        держатель сохраняются в from_* операции. Потерянная АКБ не удаляется.
+      parameters:
+      - name: battery_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: Результат команды; при повторе может описывать прошлое состояние.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+              example:
+                battery:
+                  id: 00000000-0000-4000-8000-000000000006
+                  inventory_code: AKB-0001
+                  status: lost
+                  cell_id: null
+                  holder_employee_id: null
+                  version: 2
+                  last_operation_id: 00000000-0000-4000-8000-000000000007
+                  created_at: '2026-09-28T12:00:00Z'
+                  updated_at: '2026-09-28T12:00:00Z'
+                operation:
+                  id: 00000000-0000-4000-8000-000000000007
+                  battery_id: 00000000-0000-4000-8000-000000000006
+                  battery_version: 2
+                  type: loss
+                  actor_employee_id: 00000000-0000-4000-8000-000000000001
+                  credential_id: 00000000-0000-4000-8000-000000000002
+                  from_cell_id: 00000000-0000-4000-8000-000000000005
+                  to_cell_id: null
+                  from_holder_employee_id: null
+                  to_holder_employee_id: null
+                  reason: Не обнаружена при проверке
+                  occurred_at: '2026-09-28T12:00:00Z'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '415':
+          $ref: '#/components/responses/Error415'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MarkLost'
+            example:
+              employee_barcode: '00001234'
+              reason: Не обнаружена при проверке
+  /operations:
+    get:
+      operationId: listOperations
+      tags:
+      - История
+      summary: История операций
+      description: Разные фильтры соединяются AND. Внутри фильтра сотрудника/ячейки действует OR без дублирования
+        строк. Сортировка occurred_at DESC, id DESC; offset-пагинация не фиксирует снимок.
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Offset'
+      - name: battery_id
+        in: query
+        required: false
+        description: ''
+        schema:
+          type: string
+          format: uuid
+      - name: employee_id
+        in: query
+        required: false
+        description: Автор ИЛИ предыдущий ИЛИ новый держатель.
+        schema:
+          type: string
+          format: uuid
+      - name: cell_id
+        in: query
+        required: false
+        description: Исходная ИЛИ целевая ячейка.
+        schema:
+          type: string
+          format: uuid
+      - name: from
+        in: query
+        required: false
+        description: Включительная нижняя граница occurred_at; требуется UTC offset.
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        required: false
+        description: Исключительная верхняя граница; from < to.
+        schema:
+          type: string
+          format: date-time
+      responses:
+        '200':
+          description: Успешное чтение.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationPage'
+              example:
+                items:
+                - *id006
+                limit: 50
+                offset: 0
+        '400':
+          $ref: '#/components/responses/Error400'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+  /operations/{operation_id}:
+    get:
+      operationId: getOperation
+      tags:
+      - История
+      summary: Получить операцию и предыдущее положение
+      description: Получить операцию и предыдущее положение
+      parameters:
+      - name: operation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Успешное чтение.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Operation'
+              example: *id006
+        '400':
+          $ref: '#/components/responses/Error400'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '404':
+          $ref: '#/components/responses/Error404'
+components:
+  schemas:
+    Credential:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - employee_id
+      - barcode
+      - created_at
+      - revoked_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        employee_id:
+          type: string
+          format: uuid
+        barcode:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]{1,128}$
+        created_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+          nullable: true
+    Employee:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - name
+      - created_at
+      - active_credential
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        created_at:
+          type: string
+          format: date-time
+        active_credential:
+          $ref: '#/components/schemas/Credential'
+    Cabinet:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - number
+      properties:
+        id:
+          type: string
+          format: uuid
+        number:
+          type: integer
+          format: int32
+          minimum: 1
+    Shelf:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - cabinet_id
+      - number
+      properties:
+        id:
+          type: string
+          format: uuid
+        cabinet_id:
+          type: string
+          format: uuid
+        number:
+          type: integer
+          format: int32
+          minimum: 1
+    Cell:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - shelf_id
+      - number
+      - address
+      - battery_id
+      properties:
+        id:
+          type: string
+          format: uuid
+        shelf_id:
+          type: string
+          format: uuid
+        number:
+          type: integer
+          format: int32
+          minimum: 1
+        address:
+          type: string
+          example: 1.1.1
+        battery_id:
+          type: string
+          format: uuid
+          nullable: true
+    Battery:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - inventory_code
+      - status
+      - cell_id
+      - holder_employee_id
+      - version
+      - last_operation_id
+      - created_at
+      - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        inventory_code:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]{1,128}$
+        status:
+          type: string
+          enum:
+          - stored
+          - issued
+          - lost
+        cell_id:
+          type: string
+          format: uuid
+          nullable: true
+        holder_employee_id:
+          type: string
+          format: uuid
+          nullable: true
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+        last_operation_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Operation:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - battery_id
+      - battery_version
+      - type
+      - actor_employee_id
+      - credential_id
+      - from_cell_id
+      - to_cell_id
+      - from_holder_employee_id
+      - to_holder_employee_id
+      - reason
+      - occurred_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        battery_id:
+          type: string
+          format: uuid
+        battery_version:
+          type: integer
+          format: int32
+          minimum: 1
+        type:
+          type: string
+          enum:
+          - register
+          - checkout
+          - return
+          - move
+          - loss
+        actor_employee_id:
+          type: string
+          format: uuid
+        credential_id:
+          type: string
+          format: uuid
+        from_cell_id:
+          type: string
+          format: uuid
+          nullable: true
+        to_cell_id:
+          type: string
+          format: uuid
+          nullable: true
+        from_holder_employee_id:
+          type: string
+          format: uuid
+          nullable: true
+        to_holder_employee_id:
+          type: string
+          format: uuid
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+          maxLength: 500
+        occurred_at:
+          type: string
+          format: date-time
+    CommandResult:
+      type: object
+      additionalProperties: false
+      required:
+      - battery
+      - operation
+      properties:
+        battery:
+          $ref: '#/components/schemas/Battery'
+        operation:
+          $ref: '#/components/schemas/Operation'
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: string
+          enum:
+          - VALIDATION_ERROR
+          - EMPLOYEE_NOT_FOUND
+          - RESOURCE_NOT_FOUND
+          - CELL_OCCUPIED
+          - INVALID_TRANSITION
+          - INVENTORY_CODE_EXISTS
+          - BARCODE_EXISTS
+          - NUMBER_EXISTS
+          - IDEMPOTENCY_CONFLICT
+          - REQUEST_TOO_LARGE
+          - UNSUPPORTED_MEDIA_TYPE
+          - TEMPORARILY_UNAVAILABLE
+          - INTERNAL_ERROR
+        message:
+          type: string
+    CreateEmployee:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      - barcode
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Пробелы по краям удаляются; после этого имя не может быть пустым.
+        barcode:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]{1,128}$
+    ReplaceCredential:
+      type: object
+      additionalProperties: false
+      required:
+      - barcode
+      properties:
+        barcode:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]{1,128}$
+    CreateNumbered:
+      type: object
+      additionalProperties: false
+      required:
+      - number
+      properties:
+        number:
+          type: integer
+          format: int32
+          minimum: 1
+    RegisterBattery:
+      type: object
+      additionalProperties: false
+      required:
+      - inventory_code
+      - cell_id
+      - employee_barcode
+      properties:
+        inventory_code:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]{1,128}$
+        cell_id:
+          type: string
+          format: uuid
+        employee_barcode:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]{1,128}$
+    Checkout:
+      type: object
+      additionalProperties: false
+      required:
+      - employee_barcode
+      properties:
+        employee_barcode:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]{1,128}$
+    ReturnBattery:
+      type: object
+      additionalProperties: false
+      required:
+      - employee_barcode
+      - target_cell_id
+      properties:
+        employee_barcode:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]{1,128}$
+        target_cell_id:
+          type: string
+          format: uuid
+    MoveBattery:
+      type: object
+      additionalProperties: false
+      required:
+      - employee_barcode
+      - target_cell_id
+      properties:
+        employee_barcode:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]{1,128}$
+        target_cell_id:
+          type: string
+          format: uuid
+    MarkLost:
+      type: object
+      additionalProperties: false
+      required:
+      - employee_barcode
+      - reason
+      properties:
+        employee_barcode:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]{1,128}$
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Пробелы по краям удаляются; причина обязательна.
+    EmployeePage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - limit
+      - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Employee'
+        limit:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+        offset:
+          type: integer
+          format: int32
+          minimum: 0
+    CabinetPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - limit
+      - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Cabinet'
+        limit:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+        offset:
+          type: integer
+          format: int32
+          minimum: 0
+    ShelfPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - limit
+      - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Shelf'
+        limit:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+        offset:
+          type: integer
+          format: int32
+          minimum: 0
+    CellPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - limit
+      - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Cell'
+        limit:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+        offset:
+          type: integer
+          format: int32
+          minimum: 0
+    BatteryPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - limit
+      - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Battery'
+        limit:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+        offset:
+          type: integer
+          format: int32
+          minimum: 0
+    OperationPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - limit
+      - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Operation'
+        limit:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+        offset:
+          type: integer
+          format: int32
+          minimum: 0
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: ''
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        maximum: 100
+        default: 50
+    Offset:
+      name: offset
+      in: query
+      required: false
+      description: ''
+      schema:
+        type: integer
+        format: int32
+        minimum: 0
+        default: 0
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Глобальный ключ успешной команды. Тот же ключ и запрос возвращают первоначальные статус и JSON;
+        другой запрос с тем же ключом даёт 409. Ошибки не кэшируются. Рекомендуется UUID.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: ^[A-Za-z0-9._:-]{1,128}$
+      example: demo-register-0001
+  responses:
+    Error400:
+      description: Неверные входные данные, неизвестные поля, неверный интервал времени или отсутствует Idempotency-Key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: VALIDATION_ERROR
+            message: Неверные входные данные, неизвестные поля, неверный интервал времени или отсутствует Idempotency-Key.
+    Error404:
+      description: Ресурс не найден либо штрихкод не существует/отозван.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: RESOURCE_NOT_FOUND
+            message: Ресурс не найден либо штрихкод не существует/отозван.
+    Error409:
+      description: Конфликт состояния, уникальности либо ключа идемпотентности.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: CELL_OCCUPIED
+            message: Конфликт состояния, уникальности либо ключа идемпотентности.
+    Error413:
+      description: Тело запроса больше 64 KiB.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: REQUEST_TOO_LARGE
+            message: Тело запроса больше 64 KiB.
+    Error415:
+      description: Ожидается application/json.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: UNSUPPORTED_MEDIA_TYPE
+            message: Ожидается application/json.
+    Error500:
+      description: Внутренняя ошибка; детали SQL не раскрываются.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: INTERNAL_ERROR
+            message: Внутренняя ошибка; детали SQL не раскрываются.
+    Error503:
+      description: Временный отказ БД, deadlock или lock timeout; повторить с тем же ключом.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: TEMPORARILY_UNAVAILABLE
+            message: Временный отказ БД, deadlock или lock timeout; повторить с тем же ключом.

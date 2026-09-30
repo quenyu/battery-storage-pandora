@@ -1,0 +1,19 @@
+# Local development only. Choose this OR the portable Windows scripts.
+services:
+  postgres:
+    image: postgres:17.11-alpine
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/postgres-init.sql:/docker-entrypoint-initdb.d/01-pandora.sql:ro
+      - ./scripts/postgres-grants.sql:/opt/pandora/postgres-grants.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  postgres-data:

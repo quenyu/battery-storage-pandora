@@ -1,0 +1,79 @@
+%%{init: {"theme":"base","themeCSS":".relationshipLabel{fill:#111111 !important;} .relationshipLabelBox{fill:#ffffff !important;opacity:1 !important;} .relationshipLine{stroke:#164c91 !important;stroke-width:2.5px !important;stroke-dasharray:none !important;} marker path,marker circle{stroke:#164c91 !important;stroke-width:2px !important;}","themeVariables":{"darkMode":false,"background":"#ffffff","primaryColor":"#e5edf5","primaryTextColor":"#111111","primaryBorderColor":"#253244","secondaryColor":"#ffffff","secondaryTextColor":"#111111","tertiaryColor":"#f1f5f9","tertiaryTextColor":"#111111","lineColor":"#253244","textColor":"#111111","mainBkg":"#ffffff","nodeBorder":"#253244","edgeLabelBackground":"#ffffff","attributeBackgroundColorOdd":"#ffffff","attributeBackgroundColorEven":"#f1f5f9","fontFamily":"Arial, sans-serif","fontSize":"17px"},"er":{"useMaxWidth":false,"diagramPadding":30}}}%%
+erDiagram
+    employees ||..o{ employee_credentials : "employee_id"
+    cabinets ||..o{ shelves : "cabinet_id"
+    shelves ||..o{ cells : "shelf_id"
+    cells o|..o| batteries : "current_cell_id"
+    employees o|..o{ batteries : "current_holder_employee_id"
+    batteries ||..o{ battery_operations : "battery_id"
+    employees ||..o{ battery_operations : "actor_employee_id"
+    employee_credentials ||..o{ battery_operations : "credential_id"
+    cells o|..o{ battery_operations : "source_cell_id"
+    cells o|..o{ battery_operations : "destination_cell_id"
+    employees o|..o{ battery_operations : "previous_holder_employee_id"
+    employees o|..o{ battery_operations : "new_holder_employee_id"
+
+    employees {
+        uuid id PK
+        text name
+        timestamptz created_at
+        timestamptz disabled_at
+    }
+
+    employee_credentials {
+        uuid id PK
+        uuid employee_id FK
+        text value UK
+        timestamptz created_at
+        timestamptz revoked_at
+    }
+
+    cabinets {
+        uuid id PK
+        integer number UK
+        timestamptz created_at
+        timestamptz disabled_at
+    }
+
+    shelves {
+        uuid id PK
+        uuid cabinet_id FK
+        integer number
+        timestamptz created_at
+        timestamptz disabled_at
+    }
+
+    cells {
+        uuid id PK
+        uuid shelf_id FK
+        integer number
+        timestamptz created_at
+        timestamptz disabled_at
+    }
+
+    batteries {
+        uuid id PK
+        text inventory_code UK
+        text status
+        uuid current_cell_id FK, UK
+        uuid current_holder_employee_id FK
+        integer version
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    battery_operations {
+        uuid id PK
+        uuid battery_id FK
+        integer battery_version
+        text type
+        uuid actor_employee_id FK
+        uuid credential_id FK
+        text device_code
+        uuid source_cell_id FK
+        uuid destination_cell_id FK
+        uuid previous_holder_employee_id FK
+        uuid new_holder_employee_id FK
+        timestamptz recorded_at
+    }
+

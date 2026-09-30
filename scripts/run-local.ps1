@@ -1,0 +1,16 @@
+param([ValidateRange(1024,65535)][int]$DatabasePort = 55432, [string]$HttpAddress = '127.0.0.1:8080')
+$ErrorActionPreference = 'Stop'
+$taskRoot = Split-Path -Parent $PSScriptRoot
+Push-Location $taskRoot
+try {
+    & "$PSScriptRoot/postgres-setup.ps1" -Port $DatabasePort
+    $env:DATABASE_URL = "postgres://pandora_owner@127.0.0.1:${DatabasePort}/pandora?sslmode=disable"
+    & go run ./cmd/pandora migrate
+    if ($LASTEXITCODE -ne 0) { throw 'Migration failed.' }
+    & "$PSScriptRoot/postgres-grant.ps1" -Port $DatabasePort
+    $env:DATABASE_URL = "postgres://pandora_app@127.0.0.1:${DatabasePort}/pandora?sslmode=disable"
+    $env:HTTP_ADDR = $HttpAddress
+    Write-Host "Swagger UI: http://$HttpAddress/swagger/ (Ctrl+C to stop the API)"
+    & go run ./cmd/pandora serve
+    if ($LASTEXITCODE -ne 0) { throw 'Service stopped with an error.' }
+} finally { Pop-Location }
