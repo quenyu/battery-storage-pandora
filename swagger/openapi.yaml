@@ -220,8 +220,10 @@ components:
       type: object
     CreateCredential:
       additionalProperties: false
+      description: У сотрудника может быть только одна активная личная карта. Для замены укажите ID текущей активной карты; после её отдельного отключения можно создать новую без replaces_credential_id. ШК нельзя передать другому сотруднику, даже после отключения карты.
       properties:
         replaces_credential_id:
+          description: ID заменяемой карты этого сотрудника. Если активная карта уже есть, нужно указать именно её. Отключение старой и создание новой выполняются атомарно.
           format: uuid
           type: string
         value:
@@ -1303,6 +1305,7 @@ paths:
         - Employees
     post:
       operationId: createCredential
+      description: Назначает единственную активную карту или заменяет текущую. Вторая активная карта без её явной замены даёт 409 EMPLOYEE_ACTIVE_CREDENTIAL_EXISTS. Замена сохраняет сотрудника и выданные ему АКБ; отключённые карты остаются в истории.
       parameters:
         - $ref: '#/components/parameters/employee_id'
         - $ref: '#/components/parameters/IdempotencyKey'

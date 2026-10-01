@@ -29,6 +29,14 @@ func (s *Service) CreateCredential(ctx context.Context, request model.CommandReq
 				return nil, err
 			}
 		}
+		// Only replacing the current card can free the employee's active slot.
+		hasActiveCard, err := tx.HasActiveCredential(ctx, employeeID)
+		if err != nil {
+			return nil, err
+		}
+		if hasActiveCard {
+			return nil, model.Conflict("EMPLOYEE_ACTIVE_CREDENTIAL_EXISTS")
+		}
 		credentialID := newID()
 		if err := tx.InsertCredential(ctx, credentialID, employeeID, input.Value); err != nil {
 			return nil, err

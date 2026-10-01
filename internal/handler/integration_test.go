@@ -609,13 +609,14 @@ func TestIntegrationCredentialsInactiveAndUnresolved(t *testing.T) {
 	if h.count("SELECT count(*) FROM employees") != 2 {
 		t.Fatal("unknown scan created employee")
 	}
-	h.post("/employees/"+f.ivan.ID+"/credentials", map[string]any{"value": "00000001"})
-	if h.count("SELECT count(*) FROM employee_credentials WHERE employee_id=$1 AND disabled_at IS NULL", f.ivan.ID) != 2 {
-		t.Fatal("multiple active credentials unsupported")
+	errorCode(t, h.request("POST", "/employees/"+f.ivan.ID+"/credentials", map[string]any{"value": "00000001"}, uuid.NewString(), 409), "EMPLOYEE_ACTIVE_CREDENTIAL_EXISTS")
+	if h.count("SELECT count(*) FROM employee_credentials WHERE employee_id=$1 AND disabled_at IS NULL", f.ivan.ID) != 1 {
+		t.Fatal("employee must have one active credential")
 	}
 	errorCode(t, h.request("POST", "/employees/"+f.olga.ID+"/credentials", map[string]any{"value": "00001234"}, uuid.NewString(), 409), "ACTIVE_CREDENTIAL_EXISTS")
 	h.request("PATCH", "/employees/"+f.ivan.ID+"/credentials/"+f.ivanCard.ID, map[string]any{"is_active": false}, uuid.NewString(), 200)
 	errorCode(t, h.request("POST", "/employees/"+f.olga.ID+"/credentials", map[string]any{"value": "00001234"}, uuid.NewString(), 409), "CREDENTIAL_REUSE_UNCONFIRMED")
+	h.post("/employees/"+f.ivan.ID+"/credentials", map[string]any{"value": "00000001"})
 	h.request("PATCH", "/employees/"+f.ivan.ID, map[string]any{"is_active": false}, uuid.NewString(), 200)
 	errorCode(t, h.request("POST", "/credential-resolutions", map[string]any{"credential_value": "00000001"}, "", 403), "EMPLOYEE_INACTIVE")
 	body := storeBody("INACTIVE", "4.1.1")
