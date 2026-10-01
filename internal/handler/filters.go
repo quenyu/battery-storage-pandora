@@ -10,67 +10,66 @@ import (
 )
 
 func parseFilters(r *http.Request, allowed string) (model.Filters, error) {
-	q, err := url.ParseQuery(r.URL.RawQuery)
-	filters := model.Filters{}
+	query, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
-		return filters, model.Invalid("Некорректная query-строка")
+		return nil, model.Invalid("Некорректная query-строка")
 	}
-	keys := map[string]bool{}
-	for _, k := range strings.Fields(allowed) {
-		keys[k] = true
+	fields := make(map[string]bool)
+	for _, field := range strings.Fields(allowed) {
+		fields[field] = true
 	}
-	for key, v := range q {
-		if !keys[key] || len(v) != 1 || v[0] == "" {
-			return filters, model.Invalid("Неизвестный, пустой или повторный query-параметр")
+	filters := model.Filters{}
+	for name, values := range query {
+		if !fields[name] || len(values) != 1 || values[0] == "" {
+			return nil, model.Invalid("Неизвестный, пустой или повторный query-параметр")
 		}
-		s := v[0]
-		switch key {
+		value := values[0]
+		switch name {
+		case "is_active":
+			if value != "true" && value != "false" {
+				return nil, model.Invalid("is_active должен быть true или false")
+			}
 		case "status":
-			if s != "STORED" && s != "ISSUED" {
-				return filters, model.NewError(422, "VALIDATION_FAILED", "Неизвестный статус")
+			if value != "STORED" && value != "ISSUED" {
+				return nil, model.NewError(422, "VALIDATION_FAILED", "Неизвестный статус")
 			}
 		case "type":
-			if s != "STORE" && s != "TAKE" && s != "RETURN" && s != "MOVE" {
-				return filters, model.NewError(422, "VALIDATION_FAILED", "Неизвестный тип операции")
-			}
-		case "is_active":
-			if s != "true" && s != "false" {
-				return filters, model.Invalid("is_active должен быть true или false")
+			if value != "STORE" && value != "TAKE" && value != "RETURN" && value != "MOVE" {
+				return nil, model.NewError(422, "VALIDATION_FAILED", "Неизвестный тип операции")
 			}
 		case "inventory_code":
-			// Match registration's literal identifier policy, including spaces.
-			if !utf8.ValidString(s) || strings.TrimSpace(s) == "" || strings.ContainsRune(s, 0) {
-				return filters, model.NewError(422, "VALIDATION_FAILED", "Пустой код или запрещённый символ")
+			// Inventory codes are literal identifiers, including their spaces.
+			if !utf8.ValidString(value) || strings.TrimSpace(value) == "" || strings.ContainsRune(value, 0) {
+				return nil, model.NewError(422, "VALIDATION_FAILED", "Пустой код или запрещённый символ")
 			}
 		case "location", "device_code":
-			if !utf8.ValidString(s) || strings.TrimSpace(s) != s || strings.IndexFunc(s, func(r rune) bool { return r < 32 || r == 127 }) >= 0 {
-				return filters, model.NewError(422, "VALIDATION_FAILED", "Текстовый фильтр не должен содержать крайние пробелы или управляющие символы")
+			if !utf8.ValidString(value) || strings.TrimSpace(value) != value ||
+				strings.IndexFunc(value, func(r rune) bool { return r < 32 || r == 127 }) >= 0 {
+				return nil, model.NewError(422, "VALIDATION_FAILED", "Недопустимый текстовый фильтр")
 			}
-			if key == "location" && !model.ValidLocation(s) {
-				return filters, model.NewError(422, "VALIDATION_FAILED", "Адрес должен иметь вид шкаф.полка.ячейка: положительные числа без ведущих нулей")
+			if name == "location" && !model.ValidLocation(value) {
+				return nil, model.NewError(422, "VALIDATION_FAILED", "Неверный адрес")
 			}
 		case "from", "to":
-			t, err := time.Parse(time.RFC3339Nano, s)
+			boundary, err := time.Parse(time.RFC3339Nano, value)
 			if err != nil {
-				return filters, model.Invalid("Неверная дата RFC3339")
+				return nil, model.Invalid("Неверная дата RFC3339")
 			}
-			q.Set(key, t.UTC().Format(time.RFC3339Nano))
+			value = boundary.UTC().Format(time.RFC3339Nano)
 		default:
-			if !model.ValidUUID(s) {
-				return filters, model.Invalid("Неверный UUID фильтра")
+			if !model.ValidUUID(value) {
+				return nil, model.Invalid("Неверный UUID фильтра")
 			}
-			q.Set(key, strings.ToLower(s))
+			value = strings.ToLower(value)
 		}
+		filters[name] = value
 	}
-	if q.Has("from") && q.Has("to") {
-		a, _ := time.Parse(time.RFC3339Nano, q.Get("from"))
-		b, _ := time.Parse(time.RFC3339Nano, q.Get("to"))
-		if !a.Before(b) {
-			return filters, model.NewError(422, "VALIDATION_FAILED", "from должен быть раньше to")
+	if filters["from"] != "" && filters["to"] != "" {
+		from, _ := time.Parse(time.RFC3339Nano, filters["from"])
+		to, _ := time.Parse(time.RFC3339Nano, filters["to"])
+		if !from.Before(to) {
+			return nil, model.NewError(422, "VALIDATION_FAILED", "from должен быть раньше to")
 		}
-	}
-	for key, values := range q {
-		filters[key] = values[0]
 	}
 	return filters, nil
 }

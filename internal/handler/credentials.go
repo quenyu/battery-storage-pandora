@@ -13,67 +13,78 @@ type createCredentialRequest struct {
 	ReplacesCredentialID *string `json:"replaces_credential_id"`
 }
 
-func (body *createCredentialRequest) validate() error {
-	if err := requiredText(body.Value); err != nil {
-		return err
-	}
-	if err := optionalText(body.ReplacesCredentialID); err != nil {
-		return err
-	}
-	if body.ReplacesCredentialID != nil {
-		if !model.ValidUUID(*body.ReplacesCredentialID) {
-			return model.Invalid("Неверный UUID")
-		}
-		*body.ReplacesCredentialID = strings.ToLower(*body.ReplacesCredentialID)
-	}
-	return nil
-}
-
-func (s *Server) createCredential(w http.ResponseWriter, r *http.Request) {
-	var body createCredentialRequest
-	if err := decodeCommand(w, r, &body); err != nil {
-		writeError(w, err)
-		return
-	}
-	input := model.CreateCredentialInput{Value: *body.Value, ReplacesCredentialID: body.ReplacesCredentialID}
-	s.executeCommand(w, r, &body, func(ctx context.Context, request model.CommandRequest) (model.CommandResponse, error) {
-		return s.service.CreateCredential(ctx, request, r.PathValue("employee_id"), input)
-	})
-}
-
 type disableCredentialRequest struct {
 	IsActive *bool `json:"is_active"`
-}
-
-func (body *disableCredentialRequest) validate() error {
-	if body.IsActive == nil {
-		return model.Invalid("Отсутствует обязательное поле")
-	}
-	return nil
-}
-
-func (s *Server) disableCredential(w http.ResponseWriter, r *http.Request) {
-	var body disableCredentialRequest
-	if err := decodeCommand(w, r, &body); err != nil {
-		writeError(w, err)
-		return
-	}
-	s.executeCommand(w, r, &body, func(ctx context.Context, request model.CommandRequest) (model.CommandResponse, error) {
-		return s.service.DisableCredential(ctx, request, r.PathValue("employee_id"), r.PathValue("credential_id"), *body.IsActive)
-	})
 }
 
 type resolveCredentialRequest struct {
 	CredentialValue *string `json:"credential_value"`
 }
 
-func (body *resolveCredentialRequest) validate() error {
-	return requiredText(body.CredentialValue)
+func (s *Server) createCredential(w http.ResponseWriter, r *http.Request) {
+	var body createCredentialRequest
+	if err := decodeCommand(w, r, &body, "value replaces_credential_id"); err != nil {
+		writeError(w, err)
+		return
+	}
+	if err := requiredText(body.Value); err != nil {
+		writeError(w, err)
+		return
+	}
+	if err := optionalText(body.ReplacesCredentialID); err != nil {
+		writeError(w, err)
+		return
+	}
+	if body.ReplacesCredentialID != nil {
+		if !model.ValidUUID(*body.ReplacesCredentialID) {
+			writeError(w, model.Invalid("Неверный UUID карты"))
+			return
+		}
+		*body.ReplacesCredentialID = strings.ToLower(*body.ReplacesCredentialID)
+	}
+
+	request, err := commandRequest(w, r, &body)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	input := model.CreateCredentialInput{Value: *body.Value, ReplacesCredentialID: body.ReplacesCredentialID}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	result, err := s.service.CreateCredential(ctx, request, r.PathValue("employee_id"), input)
+	writeCommand(w, r, result, err)
+}
+
+func (s *Server) disableCredential(w http.ResponseWriter, r *http.Request) {
+	var body disableCredentialRequest
+	if err := decodeCommand(w, r, &body, "is_active"); err != nil {
+		writeError(w, err)
+		return
+	}
+	if body.IsActive == nil {
+		writeError(w, model.Invalid("Отсутствует обязательное поле"))
+		return
+	}
+
+	request, err := commandRequest(w, r, &body)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	result, err := s.service.DisableCredential(ctx, request, r.PathValue("employee_id"), r.PathValue("credential_id"), *body.IsActive)
+	writeCommand(w, r, result, err)
 }
 
 func (s *Server) resolveCredential(w http.ResponseWriter, r *http.Request) {
 	var body resolveCredentialRequest
-	if err := decodeRequest(w, r, &body); err != nil {
+	if err := decodeRequest(w, r, &body, "credential_value"); err != nil {
+		writeError(w, err)
+		return
+	}
+	if err := requiredText(body.CredentialValue); err != nil {
 		writeError(w, err)
 		return
 	}

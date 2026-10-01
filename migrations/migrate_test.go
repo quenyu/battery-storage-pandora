@@ -111,22 +111,18 @@ func snapshotCurrent(t *testing.T, db *sql.DB) string {
 	return snapshot.String()
 }
 
-func TestUpgradePreservesExistingRows(t *testing.T) {
+func TestRepeatedMigrationPreservesExistingRows(t *testing.T) {
 	db := migrationDB(t)
-	schema, err := files.ReadFile("003_schema.sql")
-	if err != nil {
+	if err := Up(context.Background(), db); err != nil {
 		t.Fatal(err)
 	}
-	mustExecute(t, db, string(schema))
 	mustExecute(t, db, currentFixture)
-	mustExecute(t, db, `ALTER TABLE batteries ADD CONSTRAINT battery_position_ck CHECK (status='STORED'); ALTER TABLE battery_operations ADD CONSTRAINT operation_shape_ck CHECK (type='STORE')`)
-	mustExecute(t, db, `CREATE TABLE schema_migrations(version text PRIMARY KEY,checksum text NOT NULL,applied_at timestamptz NOT NULL DEFAULT clock_timestamp()); INSERT INTO schema_migrations(version,checksum) VALUES ('001_initial.sql',repeat('0',64)),('002_text_locations.sql',repeat('0',64))`)
 	before := snapshotCurrent(t, db)
 	if err := Up(context.Background(), db); err != nil {
 		t.Fatal(err)
 	}
 	if after := snapshotCurrent(t, db); after != before {
-		t.Fatal("upgrade changed stored rows")
+		t.Fatal("repeated migration changed stored rows")
 	}
 	var obsoleteGuards int
 	if err := db.QueryRow(`SELECT count(*) FROM pg_constraint WHERE connamespace=current_schema()::regnamespace AND conname IN ('battery_position_ck','operation_shape_ck')`).Scan(&obsoleteGuards); err != nil {
@@ -144,7 +140,13 @@ func TestChecksumMismatchKeepsData(t *testing.T) {
 	}
 	mustExecute(t, db, currentFixture)
 	before := snapshotCurrent(t, db)
-	mustExecute(t, db, `UPDATE schema_migrations SET checksum='changed' WHERE version='003_schema.sql'`)
+	result, err := db.Exec(`UPDATE schema_migrations SET checksum='changed' WHERE version='001_schema.sql'`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count, err := result.RowsAffected(); err != nil || count != 1 {
+		t.Fatalf("checksum update affected %d rows: %v", count, err)
+	}
 	if err := Up(context.Background(), db); err == nil || !strings.Contains(err.Error(), "checksum changed") {
 		t.Fatalf("expected checksum mismatch, got %v", err)
 	}

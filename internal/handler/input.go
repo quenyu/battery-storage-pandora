@@ -4,6 +4,7 @@ import (
 	"battery-storage-pandora/internal/model"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime"
 	"net/http"
@@ -11,11 +12,7 @@ import (
 	"unicode/utf8"
 )
 
-type requestBody interface {
-	validate() error
-}
-
-func decodeCommand(w http.ResponseWriter, r *http.Request, body requestBody) error {
+func decodeCommand(w http.ResponseWriter, r *http.Request, body any, allowed string) error {
 	if err := normalizePath(r); err != nil {
 		return err
 	}
@@ -24,10 +21,10 @@ func decodeCommand(w http.ResponseWriter, r *http.Request, body requestBody) err
 		return model.Invalid("Нужен UUID Idempotency-Key")
 	}
 	r.Header.Set("Idempotency-Key", strings.ToLower(keys[0]))
-	return decodeRequest(w, r, body)
+	return decodeRequest(w, r, body, allowed)
 }
 
-func decodeRequest(w http.ResponseWriter, r *http.Request, body requestBody) error {
+func decodeRequest(w http.ResponseWriter, r *http.Request, body any, allowed string) error {
 	if err := noQuery(r); err != nil {
 		return err
 	}
@@ -37,13 +34,16 @@ func decodeRequest(w http.ResponseWriter, r *http.Request, body requestBody) err
 	}
 	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<10))
 	if err != nil {
-		return model.NewError(413, "PAYLOAD_TOO_LARGE", "Максимальный размер тела — 64 KiB")
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			return model.NewError(413, "PAYLOAD_TOO_LARGE", "Максимальный размер тела — 64 KiB")
+		}
+		return model.Invalid("Не удалось прочитать тело запроса")
 	}
 	if !utf8.Valid(data) {
 		return model.Invalid("Ожидается UTF-8 JSON")
 	}
-	fields, err := checkJSONObject(data)
-	if err != nil {
+	if err := checkJSONObject(data, allowed); err != nil {
 		return err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -51,59 +51,51 @@ func decodeRequest(w http.ResponseWriter, r *http.Request, body requestBody) err
 	if err := decoder.Decode(body); err != nil {
 		return model.Invalid("Неверное поле или тип значения JSON")
 	}
-	// encoding/json also accepts case-insensitive names; the API uses exact JSON tags.
-	declaredFields, err := jsonFields(body)
-	if err != nil {
-		return err
-	}
-	for field := range fields {
-		if _, exists := declaredFields[field]; !exists {
-			return model.Invalid("Неизвестное поле")
-		}
-	}
-	return body.validate()
+	return nil
 }
 
-// The standard decoder allows duplicate fields and null. Check these before decoding.
-func checkJSONObject(data []byte) (map[string]bool, error) {
+// The standard decoder accepts duplicate fields, null and case-insensitive names.
+// Check the top-level fields first, then decode into an ordinary request struct.
+func checkJSONObject(data []byte, allowed string) error {
+	fields := make(map[string]bool)
+	for _, field := range strings.Fields(allowed) {
+		fields[field] = true
+	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	token, err := decoder.Token()
 	if err != nil || token != json.Delim('{') {
-		return nil, model.Invalid("Ожидается JSON-объект")
+		return model.Invalid("Ожидается JSON-объект")
 	}
-	fields := make(map[string]bool)
+	seen := make(map[string]bool)
 	for decoder.More() {
 		token, err := decoder.Token()
 		if err != nil {
-			return nil, model.Invalid("Некорректный JSON")
+			return model.Invalid("Некорректный JSON")
 		}
 		field, ok := token.(string)
-		if !ok || fields[field] {
-			return nil, model.Invalid("Повторяющееся поле JSON")
+		if !ok || !fields[field] {
+			return model.Invalid("Неизвестное поле JSON")
 		}
-		fields[field] = true
+		if seen[field] {
+			return model.Invalid("Повторяющееся поле JSON")
+		}
+		seen[field] = true
 		var value json.RawMessage
-		if err := decoder.Decode(&value); err != nil || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-			return nil, model.Invalid("Неверное значение поля")
+		if err := decoder.Decode(&value); err != nil {
+			return model.Invalid("Некорректный JSON")
+		}
+		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return model.Invalid("Значение null не поддерживается")
 		}
 	}
-	if _, err := decoder.Token(); err != nil {
-		return nil, model.Invalid("Некорректный JSON")
+	token, err = decoder.Token()
+	if err != nil || token != json.Delim('}') {
+		return model.Invalid("Некорректный JSON")
 	}
 	if _, err := decoder.Token(); err != io.EOF {
-		return nil, model.Invalid("Лишние данные после JSON")
+		return model.Invalid("Лишние данные после JSON")
 	}
-	return fields, nil
-}
-
-func jsonFields(value any) (map[string]json.RawMessage, error) {
-	data, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	var fields map[string]json.RawMessage
-	err = json.Unmarshal(data, &fields)
-	return fields, err
+	return nil
 }
 
 func requiredText(values ...*string) error {
@@ -125,9 +117,6 @@ func optionalText(values ...*string) error {
 }
 
 func validateLocations(values ...*string) error {
-	if err := optionalText(values...); err != nil {
-		return err
-	}
 	for _, value := range values {
 		if value != nil && !model.ValidLocation(*value) {
 			return model.NewError(422, "VALIDATION_FAILED", "Адрес: три положительных числа через точку, без ведущих нулей")

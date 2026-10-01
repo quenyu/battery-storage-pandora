@@ -1,5 +1,4 @@
 -- Upgrade existing databases without recreating tables or removing data.
--- State transitions are checked by the service.
 ALTER TABLE batteries DROP CONSTRAINT IF EXISTS battery_position_ck;
 ALTER TABLE battery_operations DROP CONSTRAINT IF EXISTS operation_shape_ck;
 

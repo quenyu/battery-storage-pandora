@@ -6,18 +6,7 @@ import (
 )
 
 func (r *Repository) GetOperationByID(ctx context.Context, id string) (model.Operation, error) {
-	query := operationSelect + ` WHERE o.id = $1`
-	var operation model.Operation
-	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&operation.ID, &operation.BatteryID, &operation.BatteryVersion, &operation.Type,
-		&operation.ActorEmployeeID, &operation.CredentialID,
-		&operation.SourceStatus, &operation.DestinationStatus,
-		&operation.SourceLocation, &operation.DestinationLocation,
-		&operation.SourceHolderEmployeeID, &operation.DestinationHolderEmployeeID,
-		&operation.DeviceCode, &operation.OccurredAt,
-	)
-	operation.OccurredAt = operation.OccurredAt.UTC()
-	return operation, err
+	return scanOperation(r.db.QueryRowContext(ctx, operationSelect+` WHERE o.id = $1`, id))
 }
 
 func (tx *Tx) RecordOperation(ctx context.Context, operation *model.Operation, requestKey string) error {
@@ -36,7 +25,7 @@ func (tx *Tx) RecordOperation(ctx context.Context, operation *model.Operation, r
 		return err
 	}
 	operation.OccurredAt = operation.OccurredAt.UTC()
-	// State and history use the exact same database timestamp.
+
 	_, err = tx.tx.ExecContext(ctx, `UPDATE batteries SET updated_at = $2 WHERE id = $1`,
 		operation.BatteryID, operation.OccurredAt)
 	return err

@@ -6,12 +6,12 @@ import (
 	"context"
 )
 
-// Commands and card changes lock employee first, then credential.
+// All commands and card changes lock the employee before the credential.
 func commandActor(ctx context.Context, tx *repository.Tx, value string) (model.Employee, model.Credential, error) {
 	credential, err := tx.FindCredential(ctx, value)
 	if err != nil {
 		if ClassifyError(err).Code == "RESOURCE_NOT_FOUND" {
-			err = model.NewError(404, "CREDENTIAL_NOT_FOUND", "Карта не найдена")
+			return model.Employee{}, model.Credential{}, model.NewError(404, "CREDENTIAL_NOT_FOUND", "Карта не найдена")
 		}
 		return model.Employee{}, model.Credential{}, err
 	}
@@ -36,7 +36,7 @@ func (s *Service) ResolveCredential(ctx context.Context, value string) (model.Cr
 	employee, credential, err := s.repo.GetEmployeeAndCredentialByValue(ctx, value)
 	if err != nil {
 		if ClassifyError(err).Code == "RESOURCE_NOT_FOUND" {
-			err = model.NewError(404, "CREDENTIAL_NOT_FOUND", "Карта не найдена")
+			return model.CredentialResolution{}, model.NewError(404, "CREDENTIAL_NOT_FOUND", "Карта не найдена")
 		}
 		return model.CredentialResolution{}, err
 	}
