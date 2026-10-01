@@ -4,7 +4,6 @@ import (
 	"battery-storage-pandora/internal/model"
 	"context"
 	"net/http"
-	"time"
 )
 
 type registerBatteryRequest struct {
@@ -52,21 +51,15 @@ func (s *Server) registerBattery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	request, err := commandRequest(w, r, &body)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
 	input := model.RegisterBatteryInput{
 		InventoryCode:       *body.InventoryCode,
 		SerialNumber:        body.SerialNumber,
 		ActorCredential:     *body.ActorCredential,
 		DestinationLocation: *body.DestinationLocation,
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-	result, err := s.service.RegisterBattery(ctx, request, input)
-	writeCommand(w, r, result, err)
+	executeCommand(w, r, &body, func(ctx context.Context, request model.CommandRequest) (model.CommandResponse, error) {
+		return s.service.RegisterBattery(ctx, request, input)
+	})
 }
 
 func (s *Server) takeBattery(w http.ResponseWriter, r *http.Request) {
@@ -88,20 +81,14 @@ func (s *Server) takeBattery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	request, err := commandRequest(w, r, &body)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
 	input := model.BatteryCommandInput{
 		ActorCredential:        *body.ActorCredential,
 		ExpectedVersion:        body.ExpectedVersion,
 		ObservedSourceLocation: body.ObservedSourceLocation,
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-	result, err := s.service.TakeBattery(ctx, request, r.PathValue("battery_id"), input)
-	writeCommand(w, r, result, err)
+	executeCommand(w, r, &body, func(ctx context.Context, request model.CommandRequest) (model.CommandResponse, error) {
+		return s.service.TakeBattery(ctx, request, r.PathValue("battery_id"), input)
+	})
 }
 
 func (s *Server) returnBattery(w http.ResponseWriter, r *http.Request) {
@@ -123,20 +110,14 @@ func (s *Server) returnBattery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	request, err := commandRequest(w, r, &body)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
 	input := model.BatteryCommandInput{
 		ActorCredential:     *body.ActorCredential,
 		DestinationLocation: *body.DestinationLocation,
 		ExpectedVersion:     body.ExpectedVersion,
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-	result, err := s.service.ReturnBattery(ctx, request, r.PathValue("battery_id"), input)
-	writeCommand(w, r, result, err)
+	executeCommand(w, r, &body, func(ctx context.Context, request model.CommandRequest) (model.CommandResponse, error) {
+		return s.service.ReturnBattery(ctx, request, r.PathValue("battery_id"), input)
+	})
 }
 
 func (s *Server) moveBattery(w http.ResponseWriter, r *http.Request) {
@@ -158,19 +139,13 @@ func (s *Server) moveBattery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	request, err := commandRequest(w, r, &body)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
 	input := model.BatteryCommandInput{
 		ActorCredential:        *body.ActorCredential,
 		DestinationLocation:    *body.DestinationLocation,
 		ExpectedVersion:        body.ExpectedVersion,
 		ObservedSourceLocation: body.ObservedSourceLocation,
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-	result, err := s.service.MoveBattery(ctx, request, r.PathValue("battery_id"), input)
-	writeCommand(w, r, result, err)
+	executeCommand(w, r, &body, func(ctx context.Context, request model.CommandRequest) (model.CommandResponse, error) {
+		return s.service.MoveBattery(ctx, request, r.PathValue("battery_id"), input)
+	})
 }

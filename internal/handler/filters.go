@@ -30,11 +30,11 @@ func parseFilters(r *http.Request, allowed string) (model.Filters, error) {
 				return nil, model.Invalid("is_active должен быть true или false")
 			}
 		case "status":
-			if value != "STORED" && value != "ISSUED" {
+			if value != model.BatteryStored && value != model.BatteryIssued {
 				return nil, model.NewError(422, "VALIDATION_FAILED", "Неизвестный статус")
 			}
 		case "type":
-			if value != "STORE" && value != "TAKE" && value != "RETURN" && value != "MOVE" {
+			if value != model.OperationStore && value != model.OperationTake && value != model.OperationReturn && value != model.OperationMove {
 				return nil, model.NewError(422, "VALIDATION_FAILED", "Неизвестный тип операции")
 			}
 		case "inventory_code":

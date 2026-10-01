@@ -113,17 +113,23 @@ func (r *Repository) ListOperations(ctx context.Context, filters model.Filters) 
 		}
 		var value any = text
 		if filter.key == "from" || filter.key == "to" {
-			boundary, _ := time.Parse(time.RFC3339Nano, text)
-			if remainder := boundary.Nanosecond() % 1000; remainder != 0 {
-				boundary = boundary.Add(time.Duration(1000-remainder) * time.Nanosecond)
-			}
-			value = boundary
+			value = postgresTimeBoundary(text)
 		}
 		args = append(args, value)
 		query += " AND " + fmt.Sprintf(filter.expression, len(args))
 	}
 	query += ` ORDER BY o.occurred_at DESC, o.id DESC`
 	return r.queryOperations(ctx, query, args...)
+}
+
+// Filters are validated by the HTTP layer. PostgreSQL timestamps have microsecond
+// precision; rounding up preserves both the inclusive from and exclusive to bounds.
+func postgresTimeBoundary(text string) time.Time {
+	boundary, _ := time.Parse(time.RFC3339Nano, text)
+	if remainder := boundary.Nanosecond() % 1000; remainder != 0 {
+		boundary = boundary.Add(time.Duration(1000-remainder) * time.Nanosecond)
+	}
+	return boundary
 }
 
 func (r *Repository) queryOperations(ctx context.Context, query string, args ...any) ([]model.Operation, error) {

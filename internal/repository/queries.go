@@ -2,6 +2,7 @@ package repository
 
 import (
 	"battery-storage-pandora/internal/model"
+	"time"
 )
 
 const employeeSelect = `
@@ -16,10 +17,7 @@ func scanEmployee(row scanner) (model.Employee, error) {
 		&employee.CreatedAt, &employee.UpdatedAt, &employee.DisabledAt)
 	employee.IsActive = employee.DisabledAt == nil
 	employee.CreatedAt, employee.UpdatedAt = employee.CreatedAt.UTC(), employee.UpdatedAt.UTC()
-	if employee.DisabledAt != nil {
-		disabledAt := employee.DisabledAt.UTC()
-		employee.DisabledAt = &disabledAt
-	}
+	employee.DisabledAt = utcPointer(employee.DisabledAt)
 	return employee, err
 }
 
@@ -35,10 +33,7 @@ func scanCredential(row scanner) (model.Credential, error) {
 		&credential.CreatedAt, &credential.UpdatedAt, &credential.DisabledAt)
 	credential.IsActive = credential.DisabledAt == nil
 	credential.CreatedAt, credential.UpdatedAt = credential.CreatedAt.UTC(), credential.UpdatedAt.UTC()
-	if credential.DisabledAt != nil {
-		disabledAt := credential.DisabledAt.UTC()
-		credential.DisabledAt = &disabledAt
-	}
+	credential.DisabledAt = utcPointer(credential.DisabledAt)
 	return credential, err
 }
 
@@ -78,4 +73,12 @@ func scanOperation(row scanner) (model.Operation, error) {
 		&operation.DeviceCode, &operation.OccurredAt)
 	operation.OccurredAt = operation.OccurredAt.UTC()
 	return operation, err
+}
+
+func utcPointer(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	utc := value.UTC()
+	return &utc
 }

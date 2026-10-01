@@ -2,6 +2,18 @@ package model
 
 import "time"
 
+const (
+	BatteryStored = "STORED"
+	BatteryIssued = "ISSUED"
+)
+
+const (
+	OperationStore  = "STORE"
+	OperationTake   = "TAKE"
+	OperationReturn = "RETURN"
+	OperationMove   = "MOVE"
+)
+
 type Employee struct {
 	ID              string     `json:"id"`
 	PersonnelNumber *string    `json:"personnel_number"`

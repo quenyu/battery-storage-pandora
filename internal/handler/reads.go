@@ -19,11 +19,7 @@ func (s *Server) getEmployee(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	result, err := s.service.GetEmployeeByID(ctx, r.PathValue("employee_id"))
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
+	writeReadResult(w, result, err)
 }
 
 func (s *Server) getBattery(w http.ResponseWriter, r *http.Request) {
@@ -38,11 +34,7 @@ func (s *Server) getBattery(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	result, err := s.service.GetBatteryByID(ctx, r.PathValue("battery_id"))
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
+	writeReadResult(w, result, err)
 }
 
 func (s *Server) getOperation(w http.ResponseWriter, r *http.Request) {
@@ -57,11 +49,7 @@ func (s *Server) getOperation(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	result, err := s.service.GetOperationByID(ctx, r.PathValue("operation_id"))
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
+	writeReadResult(w, result, err)
 }
 
 func (s *Server) listEmployees(w http.ResponseWriter, r *http.Request) {
@@ -77,11 +65,7 @@ func (s *Server) listEmployees(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	result, err := s.service.ListEmployees(ctx, filters)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, model.ListResult{Items: result})
+	writeReadResult(w, model.ListResult{Items: result}, err)
 }
 
 func (s *Server) listCredentials(w http.ResponseWriter, r *http.Request) {
@@ -96,11 +80,7 @@ func (s *Server) listCredentials(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	result, err := s.service.ListCredentials(ctx, r.PathValue("employee_id"))
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, model.ListResult{Items: result})
+	writeReadResult(w, model.ListResult{Items: result}, err)
 }
 
 func (s *Server) listBatteries(w http.ResponseWriter, r *http.Request) {
@@ -116,11 +96,7 @@ func (s *Server) listBatteries(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	result, err := s.service.ListBatteries(ctx, filters)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, model.ListResult{Items: result})
+	writeReadResult(w, model.ListResult{Items: result}, err)
 }
 
 func (s *Server) listCustody(w http.ResponseWriter, r *http.Request) {
@@ -135,11 +111,7 @@ func (s *Server) listCustody(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	result, err := s.service.ListCustody(ctx, r.PathValue("employee_id"))
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, model.ListResult{Items: result})
+	writeReadResult(w, model.ListResult{Items: result}, err)
 }
 
 func (s *Server) listBatteryOperations(w http.ResponseWriter, r *http.Request) {
@@ -154,11 +126,7 @@ func (s *Server) listBatteryOperations(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	result, err := s.service.ListBatteryOperations(ctx, r.PathValue("battery_id"))
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, model.ListResult{Items: result})
+	writeReadResult(w, model.ListResult{Items: result}, err)
 }
 
 func (s *Server) listEmployeeOperations(w http.ResponseWriter, r *http.Request) {
@@ -173,11 +141,7 @@ func (s *Server) listEmployeeOperations(w http.ResponseWriter, r *http.Request) 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	result, err := s.service.ListEmployeeOperations(ctx, r.PathValue("employee_id"))
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, model.ListResult{Items: result})
+	writeReadResult(w, model.ListResult{Items: result}, err)
 }
 
 func (s *Server) listOperations(w http.ResponseWriter, r *http.Request) {
@@ -193,9 +157,5 @@ func (s *Server) listOperations(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	result, err := s.service.ListOperations(ctx, filters)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, model.ListResult{Items: result})
+	writeReadResult(w, model.ListResult{Items: result}, err)
 }

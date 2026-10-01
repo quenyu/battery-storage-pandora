@@ -21,18 +21,7 @@ func (s *Service) runCommand(ctx context.Context, request model.CommandRequest, 
 		return model.CommandResponse{}, err
 	}
 	if !reserved {
-		saved, err := tx.SavedRequest(ctx, request.Key)
-		if err != nil {
-			return model.CommandResponse{}, err
-		}
-		if saved.Hash != request.Hash {
-			return model.CommandResponse{}, model.Conflict("IDEMPOTENCY_KEY_REUSED")
-		}
-		return model.CommandResponse{
-			Status:   saved.Status,
-			Body:     saved.Body,
-			Replayed: true,
-		}, nil
+		return replayCommand(ctx, tx, request)
 	}
 	if err := tx.Savepoint(ctx); err != nil {
 		return model.CommandResponse{}, err
@@ -50,11 +39,26 @@ func (s *Service) runCommand(ctx context.Context, request model.CommandRequest, 
 		status = commandError.Status
 		value = model.ErrorBody(commandError, request.RequestID)
 	}
+	return commitCommandResponse(ctx, tx, request.Key, status, value)
+}
+
+func replayCommand(ctx context.Context, tx *repository.Tx, request model.CommandRequest) (model.CommandResponse, error) {
+	saved, err := tx.SavedRequest(ctx, request.Key)
+	if err != nil {
+		return model.CommandResponse{}, err
+	}
+	if saved.Hash != request.Hash {
+		return model.CommandResponse{}, model.Conflict("IDEMPOTENCY_KEY_REUSED")
+	}
+	return model.CommandResponse{Status: saved.Status, Body: saved.Body, Replayed: true}, nil
+}
+
+func commitCommandResponse(ctx context.Context, tx *repository.Tx, requestKey string, status int, value any) (model.CommandResponse, error) {
 	body, err := json.Marshal(value)
 	if err != nil {
 		return model.CommandResponse{}, err
 	}
-	if err := tx.SaveResponse(ctx, request.Key, status, body); err != nil {
+	if err := tx.SaveResponse(ctx, requestKey, status, body); err != nil {
 		return model.CommandResponse{}, err
 	}
 	if err := tx.Commit(); err != nil {

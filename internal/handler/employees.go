@@ -4,7 +4,6 @@ import (
 	"battery-storage-pandora/internal/model"
 	"context"
 	"net/http"
-	"time"
 )
 
 type createEmployeeRequest struct {
@@ -32,16 +31,10 @@ func (s *Server) createEmployee(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	request, err := commandRequest(w, r, &body)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
 	input := model.CreateEmployeeInput{DisplayName: *body.DisplayName, PersonnelNumber: body.PersonnelNumber}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-	result, err := s.service.CreateEmployee(ctx, request, input)
-	writeCommand(w, r, result, err)
+	executeCommand(w, r, &body, func(ctx context.Context, request model.CommandRequest) (model.CommandResponse, error) {
+		return s.service.CreateEmployee(ctx, request, input)
+	})
 }
 
 func (s *Server) patchEmployee(w http.ResponseWriter, r *http.Request) {
@@ -55,14 +48,8 @@ func (s *Server) patchEmployee(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	request, err := commandRequest(w, r, &body)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
 	input := model.PatchEmployeeInput{DisplayName: body.DisplayName, IsActive: body.IsActive}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-	result, err := s.service.PatchEmployee(ctx, request, r.PathValue("employee_id"), input)
-	writeCommand(w, r, result, err)
+	executeCommand(w, r, &body, func(ctx context.Context, request model.CommandRequest) (model.CommandResponse, error) {
+		return s.service.PatchEmployee(ctx, request, r.PathValue("employee_id"), input)
+	})
 }
