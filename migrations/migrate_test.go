@@ -2,6 +2,7 @@ package migrations
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"fmt"
 	"os"
@@ -84,7 +85,7 @@ func TestFreshSchemaHasTextAddresses(t *testing.T) {
 	if err := db.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&versions); err != nil {
 		t.Fatal(err)
 	}
-	if versions != 2 {
+	if versions != 3 {
 		t.Fatalf("migration count = %d", versions)
 	}
 }
@@ -152,5 +153,58 @@ func TestChecksumMismatchKeepsData(t *testing.T) {
 	}
 	if after := snapshotCurrent(t, db); after != before {
 		t.Fatal("failed migration changed data")
+	}
+}
+
+func previousCredentialSchema(t *testing.T, db *sql.DB) {
+	t.Helper()
+	mustExecute(t, db, `CREATE TABLE schema_migrations (version text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT clock_timestamp())`)
+	for _, name := range []string{"001_schema.sql", "002_remove_old_guards.sql"} {
+		body, err := files.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mustExecute(t, db, string(body))
+		if _, err := db.Exec("INSERT INTO schema_migrations(version,checksum) VALUES ($1,$2)", name, fmt.Sprintf("%x", sha256.Sum256(body))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustExecute(t, db, currentFixture)
+}
+
+func TestSingleActiveCredentialMigrationPreservesHistory(t *testing.T) {
+	db := migrationDB(t)
+	previousCredentialSchema(t, db)
+	mustExecute(t, db, `INSERT INTO employee_credentials(id,employee_id,value,disabled_at) VALUES ('00000000-0000-4000-8000-000000000012','00000000-0000-4000-8000-000000000001','000002',clock_timestamp())`)
+	before := snapshotCurrent(t, db)
+	if err := Up(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+	if after := snapshotCurrent(t, db); after != before {
+		t.Fatal("single card migration changed history or application data")
+	}
+	if _, err := db.Exec(`INSERT INTO employee_credentials(id,employee_id,value) VALUES ('00000000-0000-4000-8000-000000000013','00000000-0000-4000-8000-000000000001','000003')`); err == nil {
+		t.Fatal("upgraded schema allowed a second active card")
+	}
+}
+
+func TestSingleActiveCredentialMigrationRejectsDuplicates(t *testing.T) {
+	db := migrationDB(t)
+	previousCredentialSchema(t, db)
+	mustExecute(t, db, `INSERT INTO employee_credentials(id,employee_id,value) VALUES ('00000000-0000-4000-8000-000000000012','00000000-0000-4000-8000-000000000001','000002')`)
+	before := snapshotCurrent(t, db)
+	if err := Up(context.Background(), db); err == nil || !strings.Contains(err.Error(), "003_single_active_credential.sql") {
+		t.Fatalf("expected duplicate cards to stop migration, got %v", err)
+	}
+	if after := snapshotCurrent(t, db); after != before {
+		t.Fatal("failed migration changed existing cards or history")
+	}
+	var applied int
+	if err := db.QueryRow("SELECT count(*) FROM schema_migrations WHERE version='003_single_active_credential.sql'").Scan(&applied); err != nil || applied != 0 {
+		t.Fatalf("failed migration was recorded as applied: %d, %v", applied, err)
+	}
+	mustExecute(t, db, `UPDATE employee_credentials SET disabled_at=clock_timestamp() WHERE id='00000000-0000-4000-8000-000000000012'`)
+	if err := Up(context.Background(), db); err != nil {
+		t.Fatal("migration failed after resolving duplicates:", err)
 	}
 }

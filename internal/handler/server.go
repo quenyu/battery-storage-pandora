@@ -81,6 +81,14 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
+func writeReadResult(w http.ResponseWriter, result any, err error) {
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 func normalizePath(r *http.Request) error {
 	for _, field := range []string{"employee_id", "credential_id", "battery_id", "operation_id"} {
 		value := r.PathValue(field)

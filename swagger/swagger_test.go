@@ -56,6 +56,9 @@ func TestBundledUIResourceClosure(t *testing.T) {
 	if request("/swagger/nonexistent.js").Code != http.StatusNotFound {
 		t.Fatal("missing assets must return 404")
 	}
+	if request("/swagger/README.md").Code != http.StatusNotFound {
+		t.Fatal("repository documentation must not become a public Swagger resource")
+	}
 }
 
 func TestEmbeddedContractIsAuthoritativeSource(t *testing.T) {

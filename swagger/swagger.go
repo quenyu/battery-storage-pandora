@@ -7,7 +7,7 @@ import (
 	"net/http"
 )
 
-//go:embed static/*
+//go:embed static/*.html static/*.js static/*.css static/*.png static/LICENSE static/NOTICE static/*.txt
 var resources embed.FS
 
 // Handler serves /swagger and /swagger/..., including the canonical slash redirect.

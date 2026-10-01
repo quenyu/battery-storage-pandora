@@ -23,10 +23,11 @@ func ClassifyError(err error) *model.Error {
 	if errors.As(err, &databaseError) {
 		if databaseError.Code == "23505" {
 			conflicts := map[string]string{
-				"batteries_one_per_location_uq":  "LOCATION_OCCUPIED",
-				"batteries_inventory_code_key":   "INVENTORY_CODE_EXISTS",
-				"credentials_active_value_uq":    "ACTIVE_CREDENTIAL_EXISTS",
-				"employees_personnel_number_key": "PERSONNEL_NUMBER_EXISTS",
+				"batteries_one_per_location_uq":          "LOCATION_OCCUPIED",
+				"batteries_inventory_code_key":           "INVENTORY_CODE_EXISTS",
+				"credentials_active_value_uq":            "ACTIVE_CREDENTIAL_EXISTS",
+				"credentials_one_active_per_employee_uq": "EMPLOYEE_ACTIVE_CREDENTIAL_EXISTS",
+				"employees_personnel_number_key":         "PERSONNEL_NUMBER_EXISTS",
 			}
 			if code, known := conflicts[databaseError.ConstraintName]; known {
 				return model.Conflict(code)

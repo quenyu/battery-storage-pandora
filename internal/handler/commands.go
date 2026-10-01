@@ -2,11 +2,26 @@ package handler
 
 import (
 	"battery-storage-pandora/internal/model"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 )
+
+// executeCommand finishes an already decoded and validated HTTP command.
+func executeCommand(w http.ResponseWriter, r *http.Request, body any, execute func(context.Context, model.CommandRequest) (model.CommandResponse, error)) {
+	request, err := commandRequest(w, r, body)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	result, err := execute(ctx, request)
+	writeCommand(w, r, result, err)
+}
 
 func commandRequest(w http.ResponseWriter, r *http.Request, body any) (model.CommandRequest, error) {
 	canonical, err := canonicalJSON(body)

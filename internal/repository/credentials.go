@@ -43,6 +43,17 @@ func (tx *Tx) InsertCredential(ctx context.Context, id, employeeID, value string
 	return err
 }
 
+func (tx *Tx) HasActiveCredential(ctx context.Context, employeeID string) (bool, error) {
+	var active bool
+	err := tx.tx.QueryRowContext(ctx, `
+        SELECT EXISTS (
+            SELECT 1 FROM employee_credentials
+            WHERE employee_id = $1 AND disabled_at IS NULL
+        )
+    `, employeeID).Scan(&active)
+	return active, err
+}
+
 func (tx *Tx) DisableCredential(ctx context.Context, employeeID, credentialID string) error {
 	_, err := tx.tx.ExecContext(ctx, `
         UPDATE employee_credentials

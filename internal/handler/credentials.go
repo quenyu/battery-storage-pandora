@@ -43,16 +43,10 @@ func (s *Server) createCredential(w http.ResponseWriter, r *http.Request) {
 		*body.ReplacesCredentialID = strings.ToLower(*body.ReplacesCredentialID)
 	}
 
-	request, err := commandRequest(w, r, &body)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
 	input := model.CreateCredentialInput{Value: *body.Value, ReplacesCredentialID: body.ReplacesCredentialID}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-	result, err := s.service.CreateCredential(ctx, request, r.PathValue("employee_id"), input)
-	writeCommand(w, r, result, err)
+	executeCommand(w, r, &body, func(ctx context.Context, request model.CommandRequest) (model.CommandResponse, error) {
+		return s.service.CreateCredential(ctx, request, r.PathValue("employee_id"), input)
+	})
 }
 
 func (s *Server) disableCredential(w http.ResponseWriter, r *http.Request) {
@@ -66,16 +60,9 @@ func (s *Server) disableCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	request, err := commandRequest(w, r, &body)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-	result, err := s.service.DisableCredential(ctx, request, r.PathValue("employee_id"), r.PathValue("credential_id"), *body.IsActive)
-	writeCommand(w, r, result, err)
+	executeCommand(w, r, &body, func(ctx context.Context, request model.CommandRequest) (model.CommandResponse, error) {
+		return s.service.DisableCredential(ctx, request, r.PathValue("employee_id"), r.PathValue("credential_id"), *body.IsActive)
+	})
 }
 
 func (s *Server) resolveCredential(w http.ResponseWriter, r *http.Request) {
@@ -91,9 +78,5 @@ func (s *Server) resolveCredential(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	result, err := s.service.ResolveCredential(ctx, *body.CredentialValue)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
+	writeReadResult(w, result, err)
 }
