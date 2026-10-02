@@ -1305,7 +1305,7 @@ paths:
         - Employees
     post:
       operationId: createCredential
-      description: Назначает единственную активную карту или заменяет текущую. Вторая активная карта без её явной замены даёт 409 EMPLOYEE_ACTIVE_CREDENTIAL_EXISTS. Замена сохраняет сотрудника и выданные ему АКБ; отключённые карты остаются в истории.
+      description: Назначает единственную активную карту
       parameters:
         - $ref: '#/components/parameters/employee_id'
         - $ref: '#/components/parameters/IdempotencyKey'

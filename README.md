@@ -19,6 +19,15 @@ scripts/           локальный запуск и настройка Postgre
 
 ## Запуск и остановка
 
+```sh
+make local
+```
+
+```sh
+make run HTTP_ADDR=127.0.0.1:18081
+make migrate MIGRATION_DATABASE_URL='postgres://owner@localhost/pandora_storage?sslmode=disable'
+```
+
 Из корня проекта:
 
 ```powershell
@@ -27,7 +36,7 @@ scripts/           локальный запуск и настройка Postgre
 
 Скрипт устанавливает и запускает локальный PostgreSQL, создаёт БД `pandora_storage`, применяет миграции и запускает сервер. Swagger с кнопкой **Try it out**: http://127.0.0.1:18080/swagger/.
 
-По Ctrl+C сервер перестаёт принимать запросы, ждёт завершения текущих до 30 секунд и закрывает подключение к БД. Для остановки самого PostgreSQL:
+Для остановки PostgreSQL:
 
 ```powershell
 ./.local/pgsql/bin/pg_ctl.exe -D .local/pgdata -m fast -w stop
@@ -63,7 +72,24 @@ docker compose exec -T -u postgres postgres psql -U pandora_owner -d pandora_sto
 
 API под `/api` показывает текущее состояние, содержимое адреса, выданные сотруднику АКБ и историю. Изменяющим запросам нужен UUID в заголовке `Idempotency-Key`: повтор с тем же ключом и телом возвращает сохранённый результат.
 
+## Тестовые данные
+
+При запущенном сервере (`make local` или `make run`) в другом терминале:
+
+```sh
+make seed
+# другой порт:
+make seed SEED_URL=http://127.0.0.1:18081
+```
+
 ## Проверки
+
+```sh
+make build             # бинарники bin/pandora и bin/migrate
+make check             # форматирование, vet, тесты и сборка
+make test-race         # тесты с --race
+make db-up
+```
 
 Локальный запуск создаёт также отдельную БД `pandora_test` для интеграционных тестов:
 
