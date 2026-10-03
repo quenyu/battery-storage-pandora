@@ -27,13 +27,3 @@ func (r *Repository) Begin(ctx context.Context) (*Tx, error) {
 
 func (tx *Tx) Commit() error   { return tx.tx.Commit() }
 func (tx *Tx) Rollback() error { return tx.tx.Rollback() }
-
-func (tx *Tx) Savepoint(ctx context.Context) error {
-	_, err := tx.tx.ExecContext(ctx, `SAVEPOINT business`)
-	return err
-}
-
-func (tx *Tx) RollbackToSavepoint(ctx context.Context) error {
-	_, err := tx.tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT business`)
-	return err
-}

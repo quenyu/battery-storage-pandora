@@ -1,13 +1,5 @@
 components:
   parameters:
-    IdempotencyKey:
-      example: 00000000-0000-4000-8000-000000000801
-      in: header
-      name: Idempotency-Key
-      required: true
-      schema:
-        format: uuid
-        type: string
     battery_id:
       example: 00000000-0000-4000-8000-000000000412
       in: path
@@ -144,11 +136,11 @@ components:
             error:
               code: TEMPORARILY_UNAVAILABLE
               details: {}
-              message: Повторите запрос с тем же ключом
+              message: Временный сбой; проверьте текущее состояние перед повтором
               request_id: trace-example
           schema:
             $ref: '#/components/schemas/Error'
-      description: Повторите запрос с тем же ключом
+      description: Временный сбой; проверьте текущее состояние перед повтором
   schemas:
     Battery:
       additionalProperties: false
@@ -382,6 +374,10 @@ components:
     MoveBattery:
       additionalProperties: false
       properties:
+        inventory_code:
+          description: Постоянный ШК конкретной АКБ; буквальный инвентарный код.
+          minLength: 1
+          type: string
         actor_credential_value:
           minLength: 1
           type: string
@@ -398,6 +394,7 @@ components:
           pattern: ^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$
           type: string
       required:
+        - inventory_code
         - actor_credential_value
         - destination_location
       type: object
@@ -513,6 +510,10 @@ components:
     ReturnBattery:
       additionalProperties: false
       properties:
+        inventory_code:
+          description: Постоянный ШК конкретной АКБ; буквальный инвентарный код.
+          minLength: 1
+          type: string
         actor_credential_value:
           minLength: 1
           type: string
@@ -525,6 +526,7 @@ components:
           minimum: 1
           type: integer
       required:
+        - inventory_code
         - actor_credential_value
         - destination_location
       type: object
@@ -552,6 +554,10 @@ components:
     TakeBattery:
       additionalProperties: false
       properties:
+        inventory_code:
+          description: Постоянный ШК конкретной АКБ; буквальный инвентарный код.
+          minLength: 1
+          type: string
         actor_credential_value:
           minLength: 1
           type: string
@@ -564,11 +570,12 @@ components:
           pattern: ^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$
           type: string
       required:
+        - inventory_code
         - actor_credential_value
       type: object
 info:
   title: Pandora — учёт АКБ
-  version: "1"
+  version: "2"
 openapi: 3.0.3
 paths:
   /batteries:
@@ -631,8 +638,6 @@ paths:
         - Batteries
     post:
       operationId: storeNewBattery
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         content:
           application/json:
@@ -677,9 +682,6 @@ paths:
                 $ref: '#/components/schemas/CommandResult'
           description: Создано
           headers:
-            Idempotency-Replayed:
-              schema:
-                type: boolean
             Location:
               schema:
                 type: string
@@ -739,16 +741,15 @@ paths:
       summary: Текущее состояние АКБ
       tags:
         - Batteries
-  /batteries/{battery_id}/move:
+  /batteries/move:
     post:
+      description: Перемещение хранящейся АКБ по её постоянному ШК на другой свободный адрес.
       operationId: moveBattery
-      parameters:
-        - $ref: '#/components/parameters/battery_id'
-        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         content:
           application/json:
             example:
+              inventory_code: B-00412
               actor_credential_value: "0004097281923"
               destination_location: 2.1.2
               expected_version: 3
@@ -790,9 +791,6 @@ paths:
                 $ref: '#/components/schemas/CommandResult'
           description: Создано
           headers:
-            Idempotency-Replayed:
-              schema:
-                type: boolean
             Location:
               schema:
                 type: string
@@ -858,16 +856,15 @@ paths:
       summary: История АКБ по версии
       tags:
         - History
-  /batteries/{battery_id}/return:
+  /batteries/return:
     post:
+      description: Явный возврат текущим держателем по ШК АКБ в свободную ячейку. destination_location — сканированный адрес или настройка терминала. Уже хранящаяся АКБ даёт 409.
       operationId: returnBattery
-      parameters:
-        - $ref: '#/components/parameters/battery_id'
-        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         content:
           application/json:
             example:
+              inventory_code: B-00412
               actor_credential_value: "0004097281923"
               destination_location: 1.2.4
               expected_version: 2
@@ -908,9 +905,6 @@ paths:
                 $ref: '#/components/schemas/CommandResult'
           description: Создано
           headers:
-            Idempotency-Replayed:
-              schema:
-                type: boolean
             Location:
               schema:
                 type: string
@@ -935,16 +929,15 @@ paths:
       summary: Вернуть выданную АКБ
       tags:
         - Commands
-  /batteries/{battery_id}/take:
+  /batteries/take:
     post:
+      description: Явная выдача по ШК АКБ и карте сотрудника. Уже выданная АКБ даёт 409; повтор не возвращает прежний ответ.
       operationId: takeBattery
-      parameters:
-        - $ref: '#/components/parameters/battery_id'
-        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         content:
           application/json:
             example:
+              inventory_code: B-00412
               actor_credential_value: "0004097281923"
               expected_version: 1
             schema:
@@ -984,9 +977,6 @@ paths:
                 $ref: '#/components/schemas/CommandResult'
           description: Создано
           headers:
-            Idempotency-Replayed:
-              schema:
-                type: boolean
             Location:
               schema:
                 type: string
@@ -1097,8 +1087,6 @@ paths:
         - Employees
     post:
       operationId: createEmployee
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         content:
           application/json:
@@ -1124,9 +1112,6 @@ paths:
                 $ref: '#/components/schemas/Employee'
           description: Создано
           headers:
-            Idempotency-Replayed:
-              schema:
-                type: boolean
             Location:
               schema:
                 type: string
@@ -1186,7 +1171,6 @@ paths:
       operationId: patchEmployee
       parameters:
         - $ref: '#/components/parameters/employee_id'
-        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         content:
           application/json:
@@ -1210,10 +1194,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/Employee'
           description: Успешно
-          headers:
-            Idempotency-Replayed:
-              schema:
-                type: boolean
         "400":
           $ref: '#/components/responses/Error400'
         "404":
@@ -1308,7 +1288,6 @@ paths:
       description: Назначает единственную активную карту
       parameters:
         - $ref: '#/components/parameters/employee_id'
-        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         content:
           application/json:
@@ -1334,9 +1313,6 @@ paths:
                 $ref: '#/components/schemas/Credential'
           description: Создано
           headers:
-            Idempotency-Replayed:
-              schema:
-                type: boolean
             Location:
               schema:
                 type: string
@@ -1365,7 +1341,6 @@ paths:
       parameters:
         - $ref: '#/components/parameters/employee_id'
         - $ref: '#/components/parameters/credential_id'
-        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         content:
           application/json:
@@ -1389,10 +1364,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/Credential'
           description: Успешно
-          headers:
-            Idempotency-Replayed:
-              schema:
-                type: boolean
         "400":
           $ref: '#/components/responses/Error400'
         "404":

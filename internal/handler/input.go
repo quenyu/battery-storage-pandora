@@ -16,11 +16,6 @@ func decodeCommand(w http.ResponseWriter, r *http.Request, body any, allowed str
 	if err := normalizePath(r); err != nil {
 		return err
 	}
-	keys := r.Header.Values("Idempotency-Key")
-	if len(keys) != 1 || !model.ValidUUID(keys[0]) {
-		return model.Invalid("Нужен UUID Idempotency-Key")
-	}
-	r.Header.Set("Idempotency-Key", strings.ToLower(keys[0]))
 	return decodeRequest(w, r, body, allowed)
 }
 

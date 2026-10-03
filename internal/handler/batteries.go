@@ -14,18 +14,21 @@ type registerBatteryRequest struct {
 }
 
 type takeBatteryRequest struct {
+	InventoryCode          *string `json:"inventory_code"`
 	ActorCredential        *string `json:"actor_credential_value"`
 	ExpectedVersion        *int64  `json:"expected_version"`
 	ObservedSourceLocation *string `json:"observed_source_location"`
 }
 
 type returnBatteryRequest struct {
+	InventoryCode       *string `json:"inventory_code"`
 	ActorCredential     *string `json:"actor_credential_value"`
 	DestinationLocation *string `json:"destination_location"`
 	ExpectedVersion     *int64  `json:"expected_version"`
 }
 
 type moveBatteryRequest struct {
+	InventoryCode          *string `json:"inventory_code"`
 	ActorCredential        *string `json:"actor_credential_value"`
 	DestinationLocation    *string `json:"destination_location"`
 	ExpectedVersion        *int64  `json:"expected_version"`
@@ -57,18 +60,18 @@ func (s *Server) registerBattery(w http.ResponseWriter, r *http.Request) {
 		ActorCredential:     *body.ActorCredential,
 		DestinationLocation: *body.DestinationLocation,
 	}
-	executeCommand(w, r, &body, func(ctx context.Context, request model.CommandRequest) (model.CommandResponse, error) {
-		return s.service.RegisterBattery(ctx, request, input)
+	executeCommand(w, r, func(ctx context.Context) (model.CommandResponse, error) {
+		return s.service.RegisterBattery(ctx, input)
 	})
 }
 
 func (s *Server) takeBattery(w http.ResponseWriter, r *http.Request) {
 	var body takeBatteryRequest
-	if err := decodeCommand(w, r, &body, "actor_credential_value expected_version observed_source_location"); err != nil {
+	if err := decodeCommand(w, r, &body, "inventory_code actor_credential_value expected_version observed_source_location"); err != nil {
 		writeError(w, err)
 		return
 	}
-	if err := requiredText(body.ActorCredential); err != nil {
+	if err := requiredText(body.InventoryCode, body.ActorCredential); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -86,18 +89,18 @@ func (s *Server) takeBattery(w http.ResponseWriter, r *http.Request) {
 		ExpectedVersion:        body.ExpectedVersion,
 		ObservedSourceLocation: body.ObservedSourceLocation,
 	}
-	executeCommand(w, r, &body, func(ctx context.Context, request model.CommandRequest) (model.CommandResponse, error) {
-		return s.service.TakeBattery(ctx, request, r.PathValue("battery_id"), input)
+	executeCommand(w, r, func(ctx context.Context) (model.CommandResponse, error) {
+		return s.service.TakeBattery(ctx, *body.InventoryCode, input)
 	})
 }
 
 func (s *Server) returnBattery(w http.ResponseWriter, r *http.Request) {
 	var body returnBatteryRequest
-	if err := decodeCommand(w, r, &body, "actor_credential_value destination_location expected_version"); err != nil {
+	if err := decodeCommand(w, r, &body, "inventory_code actor_credential_value destination_location expected_version"); err != nil {
 		writeError(w, err)
 		return
 	}
-	if err := requiredText(body.ActorCredential, body.DestinationLocation); err != nil {
+	if err := requiredText(body.InventoryCode, body.ActorCredential, body.DestinationLocation); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -115,18 +118,18 @@ func (s *Server) returnBattery(w http.ResponseWriter, r *http.Request) {
 		DestinationLocation: *body.DestinationLocation,
 		ExpectedVersion:     body.ExpectedVersion,
 	}
-	executeCommand(w, r, &body, func(ctx context.Context, request model.CommandRequest) (model.CommandResponse, error) {
-		return s.service.ReturnBattery(ctx, request, r.PathValue("battery_id"), input)
+	executeCommand(w, r, func(ctx context.Context) (model.CommandResponse, error) {
+		return s.service.ReturnBattery(ctx, *body.InventoryCode, input)
 	})
 }
 
 func (s *Server) moveBattery(w http.ResponseWriter, r *http.Request) {
 	var body moveBatteryRequest
-	if err := decodeCommand(w, r, &body, "actor_credential_value destination_location expected_version observed_source_location"); err != nil {
+	if err := decodeCommand(w, r, &body, "inventory_code actor_credential_value destination_location expected_version observed_source_location"); err != nil {
 		writeError(w, err)
 		return
 	}
-	if err := requiredText(body.ActorCredential, body.DestinationLocation); err != nil {
+	if err := requiredText(body.InventoryCode, body.ActorCredential, body.DestinationLocation); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -145,7 +148,7 @@ func (s *Server) moveBattery(w http.ResponseWriter, r *http.Request) {
 		ExpectedVersion:        body.ExpectedVersion,
 		ObservedSourceLocation: body.ObservedSourceLocation,
 	}
-	executeCommand(w, r, &body, func(ctx context.Context, request model.CommandRequest) (model.CommandResponse, error) {
-		return s.service.MoveBattery(ctx, request, r.PathValue("battery_id"), input)
+	executeCommand(w, r, func(ctx context.Context) (model.CommandResponse, error) {
+		return s.service.MoveBattery(ctx, *body.InventoryCode, input)
 	})
 }

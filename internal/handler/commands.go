@@ -3,55 +3,17 @@ package handler
 import (
 	"battery-storage-pandora/internal/model"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 )
 
 // executeCommand finishes an already decoded and validated HTTP command.
-func executeCommand(w http.ResponseWriter, r *http.Request, body any, execute func(context.Context, model.CommandRequest) (model.CommandResponse, error)) {
-	request, err := commandRequest(w, r, body)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
+func executeCommand(w http.ResponseWriter, r *http.Request, execute func(context.Context) (model.CommandResponse, error)) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	result, err := execute(ctx, request)
+	result, err := execute(ctx)
 	writeCommand(w, r, result, err)
-}
-
-func commandRequest(w http.ResponseWriter, r *http.Request, body any) (model.CommandRequest, error) {
-	canonical, err := canonicalJSON(body)
-	if err != nil {
-		return model.CommandRequest{}, err
-	}
-	hash := sha256.Sum256([]byte(r.Method + "\n" + canonicalPath(r) + "\n" + string(canonical)))
-	return model.CommandRequest{
-		Key:       r.Header.Get("Idempotency-Key"),
-		Hash:      fmt.Sprintf("%x", hash),
-		RequestID: w.Header().Get("X-Request-ID"),
-	}, nil
-}
-
-// Preserve saved hashes: sorted fields, absent optional fields omitted, exact int64.
-func canonicalJSON(body any) ([]byte, error) {
-	data, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return nil, err
-	}
-	for name, value := range fields {
-		if string(value) == "null" {
-			delete(fields, name)
-		}
-	}
-	return json.Marshal(fields)
 }
 
 func writeCommand(w http.ResponseWriter, r *http.Request, result model.CommandResponse, err error) {
@@ -59,7 +21,6 @@ func writeCommand(w http.ResponseWriter, r *http.Request, result model.CommandRe
 		writeError(w, err)
 		return
 	}
-	w.Header().Set("Idempotency-Replayed", fmt.Sprint(result.Replayed))
 	if result.Status == http.StatusCreated {
 		var resource struct {
 			ID        string `json:"id"`

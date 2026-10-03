@@ -6,8 +6,8 @@ import (
 	"context"
 )
 
-func (s *Service) CreateEmployee(ctx context.Context, request model.CommandRequest, input model.CreateEmployeeInput) (model.CommandResponse, error) {
-	return s.runCommand(ctx, request, 201, func(tx *repository.Tx) (any, error) {
+func (s *Service) CreateEmployee(ctx context.Context, input model.CreateEmployeeInput) (model.CommandResponse, error) {
+	return s.runCommand(ctx, 201, func(tx *repository.Tx) (any, error) {
 		employeeID := newID()
 		if err := tx.InsertEmployee(ctx, employeeID, input); err != nil {
 			return nil, err
@@ -16,8 +16,8 @@ func (s *Service) CreateEmployee(ctx context.Context, request model.CommandReque
 	})
 }
 
-func (s *Service) PatchEmployee(ctx context.Context, request model.CommandRequest, employeeID string, input model.PatchEmployeeInput) (model.CommandResponse, error) {
-	return s.runCommand(ctx, request, 200, func(tx *repository.Tx) (any, error) {
+func (s *Service) PatchEmployee(ctx context.Context, employeeID string, input model.PatchEmployeeInput) (model.CommandResponse, error) {
+	return s.runCommand(ctx, 200, func(tx *repository.Tx) (any, error) {
 		if input.DisplayName == nil && input.IsActive == nil {
 			return nil, model.NewError(422, "VALIDATION_FAILED", "Минимум одно поле должно быть заполнено")
 		}
