@@ -32,8 +32,8 @@ func (s *Server) createEmployee(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := model.CreateEmployeeInput{DisplayName: *body.DisplayName, PersonnelNumber: body.PersonnelNumber}
-	executeCommand(w, r, &body, func(ctx context.Context, request model.CommandRequest) (model.CommandResponse, error) {
-		return s.service.CreateEmployee(ctx, request, input)
+	executeCommand(w, r, func(ctx context.Context) (model.CommandResponse, error) {
+		return s.service.CreateEmployee(ctx, input)
 	})
 }
 
@@ -49,7 +49,7 @@ func (s *Server) patchEmployee(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := model.PatchEmployeeInput{DisplayName: body.DisplayName, IsActive: body.IsActive}
-	executeCommand(w, r, &body, func(ctx context.Context, request model.CommandRequest) (model.CommandResponse, error) {
-		return s.service.PatchEmployee(ctx, request, r.PathValue("employee_id"), input)
+	executeCommand(w, r, func(ctx context.Context) (model.CommandResponse, error) {
+		return s.service.PatchEmployee(ctx, r.PathValue("employee_id"), input)
 	})
 }

@@ -34,12 +34,12 @@ func ClassifyError(err error) *model.Error {
 			}
 		}
 		if temporaryDatabaseError(databaseError.Code) {
-			return model.NewError(503, "TEMPORARILY_UNAVAILABLE", "Повторите запрос с тем же ключом")
+			return model.NewError(503, "TEMPORARILY_UNAVAILABLE", "Временный сбой; проверьте текущее состояние перед повтором")
 		}
 	}
 	var networkError net.Error
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) || errors.As(err, &networkError) {
-		return model.NewError(503, "TEMPORARILY_UNAVAILABLE", "Повторите запрос с тем же ключом")
+		return model.NewError(503, "TEMPORARILY_UNAVAILABLE", "Временный сбой; проверьте текущее состояние перед повтором")
 	}
 	return model.NewError(500, "INTERNAL_ERROR", "Внутренняя ошибка")
 }

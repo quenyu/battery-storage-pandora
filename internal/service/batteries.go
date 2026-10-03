@@ -6,8 +6,8 @@ import (
 	"context"
 )
 
-func (s *Service) RegisterBattery(ctx context.Context, request model.CommandRequest, input model.RegisterBatteryInput) (model.CommandResponse, error) {
-	return s.runCommand(ctx, request, 201, func(tx *repository.Tx) (any, error) {
+func (s *Service) RegisterBattery(ctx context.Context, input model.RegisterBatteryInput) (model.CommandResponse, error) {
+	return s.runCommand(ctx, 201, func(tx *repository.Tx) (any, error) {
 		employee, credential, err := commandActor(ctx, tx, input.ActorCredential)
 		if err != nil {
 			return nil, err
@@ -33,30 +33,30 @@ func (s *Service) RegisterBattery(ctx context.Context, request model.CommandRequ
 			DestinationStatus:   model.BatteryStored,
 			DestinationLocation: &input.DestinationLocation,
 		}
-		return finishBatteryCommand(ctx, tx, request.Key, operation)
+		return finishBatteryCommand(ctx, tx, operation)
 	})
 }
 
-func (s *Service) TakeBattery(ctx context.Context, request model.CommandRequest, batteryID string, input model.BatteryCommandInput) (model.CommandResponse, error) {
-	return s.changeBattery(ctx, request, batteryID, input, model.OperationTake)
+func (s *Service) TakeBattery(ctx context.Context, inventoryCode string, input model.BatteryCommandInput) (model.CommandResponse, error) {
+	return s.changeBattery(ctx, inventoryCode, input, model.OperationTake)
 }
 
-func (s *Service) ReturnBattery(ctx context.Context, request model.CommandRequest, batteryID string, input model.BatteryCommandInput) (model.CommandResponse, error) {
-	return s.changeBattery(ctx, request, batteryID, input, model.OperationReturn)
+func (s *Service) ReturnBattery(ctx context.Context, inventoryCode string, input model.BatteryCommandInput) (model.CommandResponse, error) {
+	return s.changeBattery(ctx, inventoryCode, input, model.OperationReturn)
 }
 
-func (s *Service) MoveBattery(ctx context.Context, request model.CommandRequest, batteryID string, input model.BatteryCommandInput) (model.CommandResponse, error) {
-	return s.changeBattery(ctx, request, batteryID, input, model.OperationMove)
+func (s *Service) MoveBattery(ctx context.Context, inventoryCode string, input model.BatteryCommandInput) (model.CommandResponse, error) {
+	return s.changeBattery(ctx, inventoryCode, input, model.OperationMove)
 }
 
-func (s *Service) changeBattery(ctx context.Context, request model.CommandRequest, batteryID string, input model.BatteryCommandInput, kind string) (model.CommandResponse, error) {
-	return s.runCommand(ctx, request, 201, func(tx *repository.Tx) (any, error) {
+func (s *Service) changeBattery(ctx context.Context, inventoryCode string, input model.BatteryCommandInput, kind string) (model.CommandResponse, error) {
+	return s.runCommand(ctx, 201, func(tx *repository.Tx) (any, error) {
 		// Acquire locks in order: employee, credential, then battery.
 		employee, credential, err := commandActor(ctx, tx, input.ActorCredential)
 		if err != nil {
 			return nil, err
 		}
-		battery, err := tx.LockBattery(ctx, batteryID)
+		battery, err := tx.LockBatteryByInventoryCode(ctx, inventoryCode)
 		if err != nil {
 			return nil, err
 		}
@@ -70,7 +70,7 @@ func (s *Service) changeBattery(ctx context.Context, request model.CommandReques
 		if err := tx.UpdateBatteryState(ctx, operation); err != nil {
 			return nil, err
 		}
-		return finishBatteryCommand(ctx, tx, request.Key, operation)
+		return finishBatteryCommand(ctx, tx, operation)
 	})
 }
 
@@ -135,8 +135,8 @@ func setBatteryDestination(operation *model.Operation, battery model.Battery, in
 	return nil
 }
 
-func finishBatteryCommand(ctx context.Context, tx *repository.Tx, requestKey string, operation model.Operation) (model.CommandResult, error) {
-	if err := tx.RecordOperation(ctx, &operation, requestKey); err != nil {
+func finishBatteryCommand(ctx context.Context, tx *repository.Tx, operation model.Operation) (model.CommandResult, error) {
+	if err := tx.RecordOperation(ctx, &operation); err != nil {
 		return model.CommandResult{}, err
 	}
 	current, err := tx.GetBattery(ctx, operation.BatteryID)

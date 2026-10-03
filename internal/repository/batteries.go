@@ -13,8 +13,8 @@ func (tx *Tx) GetBattery(ctx context.Context, id string) (model.Battery, error) 
 	return scanBattery(tx.tx.QueryRowContext(ctx, batterySelect+` WHERE b.id = $1`, id))
 }
 
-func (tx *Tx) LockBattery(ctx context.Context, id string) (model.Battery, error) {
-	return scanBattery(tx.tx.QueryRowContext(ctx, batterySelect+` WHERE b.id = $1 FOR UPDATE`, id))
+func (tx *Tx) LockBatteryByInventoryCode(ctx context.Context, inventoryCode string) (model.Battery, error) {
+	return scanBattery(tx.tx.QueryRowContext(ctx, batterySelect+` WHERE b.inventory_code = $1 FOR UPDATE`, inventoryCode))
 }
 
 func (tx *Tx) InsertBattery(ctx context.Context, battery model.Battery) error {

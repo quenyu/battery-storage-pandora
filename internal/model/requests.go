@@ -1,21 +1,7 @@
 package model
 
-// CommandRequest identifies an idempotent command after HTTP validation.
-type CommandRequest struct {
-	Key       string
-	Hash      string
-	RequestID string
-}
-
-// CommandResponse is stored together with the operation and battery state.
+// CommandResponse is returned after the transaction commits.
 type CommandResponse struct {
-	Status   int
-	Body     []byte
-	Replayed bool
-}
-
-type SavedRequest struct {
-	Hash   string
 	Status int
 	Body   []byte
 }

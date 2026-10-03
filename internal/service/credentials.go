@@ -6,8 +6,8 @@ import (
 	"context"
 )
 
-func (s *Service) CreateCredential(ctx context.Context, request model.CommandRequest, employeeID string, input model.CreateCredentialInput) (model.CommandResponse, error) {
-	return s.runCommand(ctx, request, 201, func(tx *repository.Tx) (any, error) {
+func (s *Service) CreateCredential(ctx context.Context, employeeID string, input model.CreateCredentialInput) (model.CommandResponse, error) {
+	return s.runCommand(ctx, 201, func(tx *repository.Tx) (any, error) {
 		if _, err := tx.LockEmployee(ctx, employeeID); err != nil {
 			return nil, err
 		}
@@ -45,8 +45,8 @@ func (s *Service) CreateCredential(ctx context.Context, request model.CommandReq
 	})
 }
 
-func (s *Service) DisableCredential(ctx context.Context, request model.CommandRequest, employeeID, credentialID string, active bool) (model.CommandResponse, error) {
-	return s.runCommand(ctx, request, 200, func(tx *repository.Tx) (any, error) {
+func (s *Service) DisableCredential(ctx context.Context, employeeID, credentialID string, active bool) (model.CommandResponse, error) {
+	return s.runCommand(ctx, 200, func(tx *repository.Tx) (any, error) {
 		if active {
 			return nil, model.NewError(422, "VALIDATION_FAILED", "Карту можно только отключить")
 		}

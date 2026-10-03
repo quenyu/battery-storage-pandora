@@ -44,8 +44,8 @@ func (s *Server) createCredential(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := model.CreateCredentialInput{Value: *body.Value, ReplacesCredentialID: body.ReplacesCredentialID}
-	executeCommand(w, r, &body, func(ctx context.Context, request model.CommandRequest) (model.CommandResponse, error) {
-		return s.service.CreateCredential(ctx, request, r.PathValue("employee_id"), input)
+	executeCommand(w, r, func(ctx context.Context) (model.CommandResponse, error) {
+		return s.service.CreateCredential(ctx, r.PathValue("employee_id"), input)
 	})
 }
 
@@ -60,8 +60,8 @@ func (s *Server) disableCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	executeCommand(w, r, &body, func(ctx context.Context, request model.CommandRequest) (model.CommandResponse, error) {
-		return s.service.DisableCredential(ctx, request, r.PathValue("employee_id"), r.PathValue("credential_id"), *body.IsActive)
+	executeCommand(w, r, func(ctx context.Context) (model.CommandResponse, error) {
+		return s.service.DisableCredential(ctx, r.PathValue("employee_id"), r.PathValue("credential_id"), *body.IsActive)
 	})
 }
 
