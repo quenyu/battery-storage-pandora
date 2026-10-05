@@ -59,7 +59,7 @@ const operationSelect = `
            o.source_status, o.destination_status,
            o.source_location, o.destination_location,
            o.source_holder_employee_id, o.destination_holder_employee_id,
-           o.device_code, o.occurred_at
+           o.occurred_at
     FROM battery_operations o
 `
 
@@ -70,7 +70,7 @@ func scanOperation(row scanner) (model.Operation, error) {
 		&operation.SourceStatus, &operation.DestinationStatus,
 		&operation.SourceLocation, &operation.DestinationLocation,
 		&operation.SourceHolderEmployeeID, &operation.DestinationHolderEmployeeID,
-		&operation.DeviceCode, &operation.OccurredAt)
+		&operation.OccurredAt)
 	operation.OccurredAt = operation.OccurredAt.UTC()
 	return operation, err
 }

@@ -20,6 +20,9 @@ CREATE TABLE IF NOT EXISTS employee_credentials (
 CREATE UNIQUE INDEX IF NOT EXISTS credentials_active_value_uq
     ON employee_credentials(value) WHERE disabled_at IS NULL;
 
+CREATE UNIQUE INDEX IF NOT EXISTS credentials_one_active_per_employee_uq
+    ON employee_credentials(employee_id) WHERE disabled_at IS NULL;
+
 CREATE TABLE IF NOT EXISTS batteries (
     id uuid PRIMARY KEY,
     inventory_code text NOT NULL UNIQUE,
@@ -35,16 +38,6 @@ CREATE TABLE IF NOT EXISTS batteries (
 CREATE UNIQUE INDEX IF NOT EXISTS batteries_one_per_location_uq
     ON batteries(current_location) WHERE current_location IS NOT NULL;
 
-CREATE TABLE IF NOT EXISTS idempotency_requests (
-    scope text NOT NULL,
-    key uuid NOT NULL,
-    request_hash text NOT NULL,
-    http_status smallint,
-    response_body jsonb,
-    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
-    PRIMARY KEY (scope, key)
-);
-
 CREATE TABLE IF NOT EXISTS battery_operations (
     id uuid PRIMARY KEY,
     battery_id uuid NOT NULL REFERENCES batteries(id),
@@ -58,14 +51,8 @@ CREATE TABLE IF NOT EXISTS battery_operations (
     destination_location text,
     source_holder_employee_id uuid REFERENCES employees(id),
     destination_holder_employee_id uuid REFERENCES employees(id),
-    device_code text,
-    request_scope text NOT NULL,
-    request_key uuid NOT NULL,
     occurred_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     UNIQUE (battery_id, battery_version),
-    UNIQUE (request_scope, request_key),
     FOREIGN KEY (credential_id, actor_employee_id)
-        REFERENCES employee_credentials(id, employee_id),
-    FOREIGN KEY (request_scope, request_key)
-        REFERENCES idempotency_requests(scope, key)
+        REFERENCES employee_credentials(id, employee_id)
 );
