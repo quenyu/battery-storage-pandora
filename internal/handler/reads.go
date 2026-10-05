@@ -149,7 +149,7 @@ func (s *Server) listOperations(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	filters, err := parseFilters(r, "battery_id employee_id location device_code type from to")
+	filters, err := parseFilters(r, "battery_id employee_id location type from to")
 	if err != nil {
 		writeError(w, err)
 		return

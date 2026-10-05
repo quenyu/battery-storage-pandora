@@ -59,7 +59,6 @@ type Operation struct {
 	DestinationLocation         *string   `json:"destination_location"`
 	SourceHolderEmployeeID      *string   `json:"source_holder_employee_id"`
 	DestinationHolderEmployeeID *string   `json:"destination_holder_employee_id"`
-	DeviceCode                  *string   `json:"device_code"`
 	OccurredAt                  time.Time `json:"occurred_at"`
 }
 

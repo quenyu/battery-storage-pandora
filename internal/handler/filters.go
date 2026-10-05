@@ -42,7 +42,7 @@ func parseFilters(r *http.Request, allowed string) (model.Filters, error) {
 			if !utf8.ValidString(value) || strings.TrimSpace(value) == "" || strings.ContainsRune(value, 0) {
 				return nil, model.NewError(422, "VALIDATION_FAILED", "Пустой код или запрещённый символ")
 			}
-		case "location", "device_code":
+		case "location":
 			if !utf8.ValidString(value) || strings.TrimSpace(value) != value ||
 				strings.IndexFunc(value, func(r rune) bool { return r < 32 || r == 127 }) >= 0 {
 				return nil, model.NewError(422, "VALIDATION_FAILED", "Недопустимый текстовый фильтр")

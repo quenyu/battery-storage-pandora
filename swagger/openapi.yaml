@@ -428,10 +428,6 @@ components:
             - STORED
             - ISSUED
           type: string
-        device_code:
-          minLength: 1
-          nullable: true
-          type: string
         id:
           format: uuid
           type: string
@@ -474,7 +470,6 @@ components:
         - destination_location
         - source_holder_employee_id
         - destination_holder_employee_id
-        - device_code
         - occurred_at
       type: object
     OperationList:
@@ -671,7 +666,6 @@ paths:
                   destination_holder_employee_id: null
                   destination_location: 1.1.1
                   destination_status: STORED
-                  device_code: null
                   id: 00000000-0000-4000-8000-000000000901
                   occurred_at: "2026-09-30T09:14:00Z"
                   source_holder_employee_id: null
@@ -780,7 +774,6 @@ paths:
                   destination_holder_employee_id: null
                   destination_location: 2.1.2
                   destination_status: STORED
-                  device_code: null
                   id: 00000000-0000-4000-8000-000000000904
                   occurred_at: "2026-09-30T11:26:00Z"
                   source_holder_employee_id: null
@@ -833,7 +826,6 @@ paths:
                     destination_holder_employee_id: null
                     destination_location: 1.1.1
                     destination_status: STORED
-                    device_code: null
                     id: 00000000-0000-4000-8000-000000000901
                     occurred_at: "2026-09-30T09:14:00Z"
                     source_holder_employee_id: null
@@ -894,7 +886,6 @@ paths:
                   destination_holder_employee_id: null
                   destination_location: 1.2.4
                   destination_status: STORED
-                  device_code: null
                   id: 00000000-0000-4000-8000-000000000903
                   occurred_at: "2026-09-30T11:26:00Z"
                   source_holder_employee_id: 00000000-0000-4000-8000-000000000137
@@ -966,7 +957,6 @@ paths:
                   destination_holder_employee_id: 00000000-0000-4000-8000-000000000137
                   destination_location: null
                   destination_status: ISSUED
-                  device_code: null
                   id: 00000000-0000-4000-8000-000000000902
                   occurred_at: "2026-09-30T11:26:00Z"
                   source_holder_employee_id: null
@@ -1401,7 +1391,6 @@ paths:
                     destination_holder_employee_id: null
                     destination_location: 1.1.1
                     destination_status: STORED
-                    device_code: null
                     id: 00000000-0000-4000-8000-000000000901
                     occurred_at: "2026-09-30T09:14:00Z"
                     source_holder_employee_id: null
@@ -1445,11 +1434,6 @@ paths:
             pattern: ^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$
             type: string
         - in: query
-          name: device_code
-          schema:
-            minLength: 1
-            type: string
-        - in: query
           name: type
           schema:
             enum:
@@ -1481,7 +1465,6 @@ paths:
                     destination_holder_employee_id: null
                     destination_location: 1.1.1
                     destination_status: STORED
-                    device_code: null
                     id: 00000000-0000-4000-8000-000000000901
                     occurred_at: "2026-09-30T09:14:00Z"
                     source_holder_employee_id: null
@@ -1521,7 +1504,6 @@ paths:
                 destination_holder_employee_id: null
                 destination_location: 1.1.1
                 destination_status: STORED
-                device_code: null
                 id: 00000000-0000-4000-8000-000000000901
                 occurred_at: "2026-09-30T09:14:00Z"
                 source_holder_employee_id: null

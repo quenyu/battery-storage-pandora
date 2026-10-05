@@ -104,7 +104,7 @@ func (r *Repository) ListOperations(ctx context.Context, filters model.Filters) 
 		{"battery_id", "o.battery_id=$%[1]d"},
 		{"employee_id", "(o.actor_employee_id=$%[1]d OR o.source_holder_employee_id=$%[1]d OR o.destination_holder_employee_id=$%[1]d)"},
 		{"location", "(o.source_location=$%[1]d OR o.destination_location=$%[1]d)"},
-		{"device_code", "o.device_code=$%[1]d"}, {"type", "o.type=$%[1]d"},
+		{"type", "o.type=$%[1]d"},
 		{"from", "o.occurred_at >= $%[1]d"}, {"to", "o.occurred_at < $%[1]d"},
 	} {
 		text, supplied := filters[filter.key]
