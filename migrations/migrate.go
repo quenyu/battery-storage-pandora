@@ -39,7 +39,7 @@ func Up(ctx context.Context, db *sql.DB) error {
 		err = tx.QueryRowContext(ctx, `SELECT checksum FROM schema_migrations WHERE version=$1`, entry.Name()).Scan(&existing)
 		if err == nil {
 			if sum != existing {
-				return fmt.Errorf("migration %s checksum changed", entry.Name())
+				return fmt.Errorf("migration %s checksum changed; a local development database can be recreated with make db-reset or scripts/run-local.ps1 -Reset", entry.Name())
 			}
 			continue
 		}

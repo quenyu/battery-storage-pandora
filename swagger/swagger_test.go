@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 func TestBundledUIResourceClosure(t *testing.T) {
@@ -71,5 +73,20 @@ func TestEmbeddedContractIsAuthoritativeSource(t *testing.T) {
 	}
 	if !bytes.Contains(OpenAPI, []byte(`url: /api`)) {
 		t.Fatal("Try it out must use the same-origin API")
+	}
+}
+
+func TestContractIsValid(t *testing.T) {
+	loader := openapi3.NewLoader()
+	doc, err := loader.LoadFromData(OpenAPI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Validation includes every example against its schema.
+	if err := doc.Validate(loader.Context); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(OpenAPI, []byte("format: uuid")) {
+		t.Fatal("domain identifiers are numeric")
 	}
 }

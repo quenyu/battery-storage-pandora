@@ -15,7 +15,7 @@ const (
 )
 
 type Employee struct {
-	ID              string     `json:"id"`
+	ID              int64      `json:"id"`
 	PersonnelNumber *string    `json:"personnel_number"`
 	DisplayName     string     `json:"display_name"`
 	IsActive        bool       `json:"is_active"`
@@ -25,41 +25,36 @@ type Employee struct {
 }
 
 type Credential struct {
-	ID         string     `json:"id"`
-	EmployeeID string     `json:"employee_id"`
+	ID         int64      `json:"id"`
+	EmployeeID int64      `json:"employee_id"`
 	Value      string     `json:"value"`
 	IsActive   bool       `json:"is_active"`
 	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
 	DisabledAt *time.Time `json:"disabled_at"`
 }
 
+// Battery state (status, location, holder) is derived from its latest operation.
 type Battery struct {
-	ID                      string    `json:"id"`
+	ID                      int64     `json:"id"`
 	InventoryCode           string    `json:"inventory_code"`
 	SerialNumber            *string   `json:"serial_number"`
 	Status                  string    `json:"status"`
 	CurrentLocation         *string   `json:"current_location"`
-	CurrentHolderEmployeeID *string   `json:"current_holder_employee_id"`
-	Version                 int64     `json:"version"`
+	CurrentHolderEmployeeID *int64    `json:"current_holder_employee_id"`
 	CreatedAt               time.Time `json:"created_at"`
-	UpdatedAt               time.Time `json:"updated_at"`
 }
 
+// Operation is one history entry. The actor is the owner of the credential and
+// the source location is the location of the previous operation of the battery.
 type Operation struct {
-	ID                          string    `json:"id"`
-	BatteryID                   string    `json:"battery_id"`
-	BatteryVersion              int64     `json:"battery_version"`
-	Type                        string    `json:"type"`
-	ActorEmployeeID             string    `json:"actor_employee_id"`
-	CredentialID                string    `json:"credential_id"`
-	SourceStatus                *string   `json:"source_status"`
-	DestinationStatus           string    `json:"destination_status"`
-	SourceLocation              *string   `json:"source_location"`
-	DestinationLocation         *string   `json:"destination_location"`
-	SourceHolderEmployeeID      *string   `json:"source_holder_employee_id"`
-	DestinationHolderEmployeeID *string   `json:"destination_holder_employee_id"`
-	OccurredAt                  time.Time `json:"occurred_at"`
+	ID                  int64     `json:"id"`
+	BatteryID           int64     `json:"battery_id"`
+	Type                string    `json:"type"`
+	ActorEmployeeID     int64     `json:"actor_employee_id"`
+	CredentialID        int64     `json:"credential_id"`
+	SourceLocation      *string   `json:"source_location"`
+	DestinationLocation *string   `json:"destination_location"`
+	OccurredAt          time.Time `json:"occurred_at"`
 }
 
 type CommandResult struct {

@@ -12,7 +12,7 @@ HTTP_ADDR ?= 127.0.0.1:18080
 TEST_DATABASE_URL ?= postgres://pandora_owner@127.0.0.1:55432/pandora_test?sslmode=disable
 TEST_APP_DATABASE_URL ?= postgres://pandora_app@127.0.0.1:55432/pandora_test?sslmode=disable
 
-.PHONY: help build run migrate local seed fmt fmt-check vet check db-up db-down db-grants clean
+.PHONY: help build run migrate local seed fmt fmt-check vet test check db-up db-down db-reset db-grants clean
 
 help:
 	@printf '%s\n' \
@@ -58,6 +58,9 @@ fmt-check:
 vet:
 	$(GO) vet ./...
 
+test:
+	$(GO) test ./...
+
 check: fmt-check vet test build
 
 db-up:
@@ -65,6 +68,11 @@ db-up:
 
 db-down:
 	$(DOCKER) compose down
+
+# Local development only: removes the compose volume with all database data.
+db-reset:
+	$(DOCKER) compose down -v
+	$(MAKE) db-up
 
 db-grants:
 	$(DOCKER) compose exec -T -u postgres postgres psql -U pandora_owner -d pandora_storage \

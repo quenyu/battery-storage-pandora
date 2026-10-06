@@ -4,13 +4,12 @@ import (
 	"battery-storage-pandora/internal/model"
 	"battery-storage-pandora/internal/service"
 	"battery-storage-pandora/swagger"
+	"crypto/rand"
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"strings"
+	"strconv"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type Server struct {
@@ -33,7 +32,7 @@ func New(service *service.Service) http.Handler {
 	})
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestID := newID()
+		requestID := rand.Text()
 		w.Header().Set("X-Request-ID", requestID)
 		r.Header.Set("X-Request-ID", requestID)
 		started := time.Now()
@@ -89,18 +88,13 @@ func writeReadResult(w http.ResponseWriter, result any, err error) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-func normalizePath(r *http.Request) error {
-	for _, field := range []string{"employee_id", "credential_id", "battery_id", "operation_id"} {
-		value := r.PathValue(field)
-		if value == "" {
-			continue
-		}
-		if !model.ValidUUID(value) {
-			return model.Invalid("Неверный UUID в пути")
-		}
-		r.SetPathValue(field, strings.ToLower(value))
+// pathID parses a positive numeric identifier from the route.
+func pathID(r *http.Request, name string) (int64, error) {
+	id, err := strconv.ParseInt(r.PathValue(name), 10, 64)
+	if err != nil || id < 1 {
+		return 0, model.Invalid("Неверный идентификатор в пути")
 	}
-	return nil
+	return id, nil
 }
 
 func noQuery(r *http.Request) error {
@@ -108,18 +102,4 @@ func noQuery(r *http.Request) error {
 		return model.Invalid("Query-параметры не поддерживаются")
 	}
 	return nil
-}
-
-func canonicalPath(r *http.Request) string {
-	parts := strings.Split(r.URL.Path, "/")
-	for i, part := range parts {
-		if model.ValidUUID(part) {
-			parts[i] = strings.ToLower(part)
-		}
-	}
-	return strings.Join(parts, "/")
-}
-
-func newID() string {
-	return uuid.NewString()
 }

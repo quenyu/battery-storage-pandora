@@ -12,13 +12,6 @@ import (
 	"unicode/utf8"
 )
 
-func decodeCommand(w http.ResponseWriter, r *http.Request, body any, allowed string) error {
-	if err := normalizePath(r); err != nil {
-		return err
-	}
-	return decodeRequest(w, r, body, allowed)
-}
-
 func decodeRequest(w http.ResponseWriter, r *http.Request, body any, allowed string) error {
 	if err := noQuery(r); err != nil {
 		return err
@@ -116,13 +109,6 @@ func validateLocations(values ...*string) error {
 		if value != nil && !model.ValidLocation(*value) {
 			return model.NewError(422, "VALIDATION_FAILED", "Адрес: три положительных числа через точку, без ведущих нулей")
 		}
-	}
-	return nil
-}
-
-func validateVersion(version *int64) error {
-	if version != nil && *version < 1 {
-		return model.NewError(422, "VALIDATION_FAILED", "Версия должна быть положительной")
 	}
 	return nil
 }
