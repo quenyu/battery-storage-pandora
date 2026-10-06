@@ -1,37 +1,41 @@
 components:
   parameters:
     battery_id:
-      example: 00000000-0000-4000-8000-000000000412
+      example: 1
       in: path
       name: battery_id
       required: true
       schema:
-        format: uuid
-        type: string
+        format: int64
+        minimum: 1
+        type: integer
     credential_id:
-      example: 00000000-0000-4000-8000-000000000138
+      example: 1
       in: path
       name: credential_id
       required: true
       schema:
-        format: uuid
-        type: string
+        format: int64
+        minimum: 1
+        type: integer
     employee_id:
-      example: 00000000-0000-4000-8000-000000000137
+      example: 1
       in: path
       name: employee_id
       required: true
       schema:
-        format: uuid
-        type: string
+        format: int64
+        minimum: 1
+        type: integer
     operation_id:
-      example: 00000000-0000-4000-8000-000000000901
+      example: 1
       in: path
       name: operation_id
       required: true
       schema:
-        format: uuid
-        type: string
+        format: int64
+        minimum: 1
+        type: integer
   responses:
     Error400:
       content:
@@ -149,17 +153,19 @@ components:
           format: date-time
           type: string
         current_holder_employee_id:
-          format: uuid
+          format: int64
           nullable: true
-          type: string
+          minimum: 1
+          type: integer
         current_location:
           minLength: 1
           nullable: true
           pattern: ^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$
           type: string
         id:
-          format: uuid
-          type: string
+          format: int64
+          minimum: 1
+          type: integer
         inventory_code:
           minLength: 1
           type: string
@@ -171,13 +177,6 @@ components:
             - STORED
             - ISSUED
           type: string
-        updated_at:
-          format: date-time
-          type: string
-        version:
-          format: int64
-          minimum: 1
-          type: integer
       required:
         - id
         - inventory_code
@@ -185,9 +184,7 @@ components:
         - status
         - current_location
         - current_holder_employee_id
-        - version
         - created_at
-        - updated_at
       type: object
     BatteryList:
       additionalProperties: false
@@ -216,8 +213,9 @@ components:
       properties:
         replaces_credential_id:
           description: ID заменяемой карты этого сотрудника. Если активная карта уже есть, нужно указать именно её. Отключение старой и создание новой выполняются атомарно.
-          format: uuid
-          type: string
+          format: int64
+          minimum: 1
+          type: integer
         value:
           minLength: 1
           type: string
@@ -247,16 +245,15 @@ components:
           nullable: true
           type: string
         employee_id:
-          format: uuid
-          type: string
+          format: int64
+          minimum: 1
+          type: integer
         id:
-          format: uuid
-          type: string
+          format: int64
+          minimum: 1
+          type: integer
         is_active:
           type: boolean
-        updated_at:
-          format: date-time
-          type: string
         value:
           minLength: 1
           type: string
@@ -264,7 +261,6 @@ components:
         - id
         - is_active
         - created_at
-        - updated_at
         - disabled_at
         - employee_id
         - value
@@ -283,8 +279,9 @@ components:
       additionalProperties: false
       properties:
         credential_id:
-          format: uuid
-          type: string
+          format: int64
+          minimum: 1
+          type: integer
         employee:
           $ref: '#/components/schemas/Employee'
       required:
@@ -315,8 +312,9 @@ components:
           minLength: 1
           type: string
         id:
-          format: uuid
-          type: string
+          format: int64
+          minimum: 1
+          type: integer
         is_active:
           type: boolean
         personnel_number:
@@ -385,14 +383,6 @@ components:
           minLength: 1
           pattern: ^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$
           type: string
-        expected_version:
-          format: int64
-          minimum: 1
-          type: integer
-        observed_source_location:
-          minLength: 1
-          pattern: ^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$
-          type: string
       required:
         - inventory_code
         - actor_credential_value
@@ -402,53 +392,33 @@ components:
       additionalProperties: false
       properties:
         actor_employee_id:
-          format: uuid
-          type: string
+          format: int64
+          minimum: 1
+          type: integer
         battery_id:
-          format: uuid
-          type: string
-        battery_version:
           format: int64
           minimum: 1
           type: integer
         credential_id:
-          format: uuid
-          type: string
-        destination_holder_employee_id:
-          format: uuid
-          nullable: true
-          type: string
+          format: int64
+          minimum: 1
+          type: integer
         destination_location:
           minLength: 1
           nullable: true
           pattern: ^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$
           type: string
-        destination_status:
-          enum:
-            - STORED
-            - ISSUED
-          type: string
         id:
-          format: uuid
-          type: string
+          format: int64
+          minimum: 1
+          type: integer
         occurred_at:
           format: date-time
-          type: string
-        source_holder_employee_id:
-          format: uuid
-          nullable: true
           type: string
         source_location:
           minLength: 1
           nullable: true
           pattern: ^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$
-          type: string
-        source_status:
-          enum:
-            - STORED
-            - ISSUED
-            - null
-          nullable: true
           type: string
         type:
           enum:
@@ -460,16 +430,11 @@ components:
       required:
         - id
         - battery_id
-        - battery_version
         - type
         - actor_employee_id
         - credential_id
-        - source_status
-        - destination_status
         - source_location
         - destination_location
-        - source_holder_employee_id
-        - destination_holder_employee_id
         - occurred_at
       type: object
     OperationList:
@@ -516,10 +481,6 @@ components:
           minLength: 1
           pattern: ^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$
           type: string
-        expected_version:
-          format: int64
-          minimum: 1
-          type: integer
       required:
         - inventory_code
         - actor_credential_value
@@ -556,21 +517,13 @@ components:
         actor_credential_value:
           minLength: 1
           type: string
-        expected_version:
-          format: int64
-          minimum: 1
-          type: integer
-        observed_source_location:
-          minLength: 1
-          pattern: ^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$
-          type: string
       required:
         - inventory_code
         - actor_credential_value
       type: object
 info:
   title: Pandora — учёт АКБ
-  version: "2"
+  version: "3"
 openapi: 3.0.3
 paths:
   /batteries:
@@ -592,8 +545,9 @@ paths:
         - in: query
           name: holder_employee_id
           schema:
-            format: uuid
-            type: string
+            format: int64
+            minimum: 1
+            type: integer
         - in: query
           name: location
           schema:
@@ -609,12 +563,10 @@ paths:
                   - created_at: "2026-09-30T09:14:00Z"
                     current_holder_employee_id: null
                     current_location: 1.1.1
-                    id: 00000000-0000-4000-8000-000000000412
+                    id: 1
                     inventory_code: B-00412
                     serial_number: null
                     status: STORED
-                    updated_at: "2026-09-30T09:14:00Z"
-                    version: 1
               schema:
                 $ref: '#/components/schemas/BatteryList'
           description: Успешно
@@ -644,6 +596,12 @@ paths:
               $ref: '#/components/schemas/StoreBattery'
         required: true
       responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+          description: Повтор последней команды той же картой с теми же данными; новая операция не создаётся, возвращается прежняя
         "201":
           content:
             application/json:
@@ -652,25 +610,18 @@ paths:
                   created_at: "2026-09-30T09:14:00Z"
                   current_holder_employee_id: null
                   current_location: 1.1.1
-                  id: 00000000-0000-4000-8000-000000000412
+                  id: 1
                   inventory_code: B-00412
                   serial_number: null
                   status: STORED
-                  updated_at: "2026-09-30T09:14:00Z"
-                  version: 1
                 operation:
-                  actor_employee_id: 00000000-0000-4000-8000-000000000137
-                  battery_id: 00000000-0000-4000-8000-000000000412
-                  battery_version: 1
-                  credential_id: 00000000-0000-4000-8000-000000000138
-                  destination_holder_employee_id: null
+                  actor_employee_id: 1
+                  battery_id: 1
+                  credential_id: 1
                   destination_location: 1.1.1
-                  destination_status: STORED
-                  id: 00000000-0000-4000-8000-000000000901
+                  id: 1
                   occurred_at: "2026-09-30T09:14:00Z"
-                  source_holder_employee_id: null
                   source_location: null
-                  source_status: null
                   type: STORE
               schema:
                 $ref: '#/components/schemas/CommandResult'
@@ -713,12 +664,10 @@ paths:
                 created_at: "2026-09-30T09:14:00Z"
                 current_holder_employee_id: null
                 current_location: 1.1.1
-                id: 00000000-0000-4000-8000-000000000412
+                id: 1
                 inventory_code: B-00412
                 serial_number: null
                 status: STORED
-                updated_at: "2026-09-30T09:14:00Z"
-                version: 1
               schema:
                 $ref: '#/components/schemas/Battery'
           description: Успешно
@@ -746,12 +695,16 @@ paths:
               inventory_code: B-00412
               actor_credential_value: "0004097281923"
               destination_location: 2.1.2
-              expected_version: 3
-              observed_source_location: 1.2.4
             schema:
               $ref: '#/components/schemas/MoveBattery'
         required: true
       responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+          description: Повтор последней команды той же картой с теми же данными; новая операция не создаётся, возвращается прежняя
         "201":
           content:
             application/json:
@@ -760,25 +713,18 @@ paths:
                   created_at: "2026-09-30T09:14:00Z"
                   current_holder_employee_id: null
                   current_location: 2.1.2
-                  id: 00000000-0000-4000-8000-000000000412
+                  id: 1
                   inventory_code: B-00412
                   serial_number: null
                   status: STORED
-                  updated_at: "2026-09-30T11:26:00Z"
-                  version: 4
                 operation:
-                  actor_employee_id: 00000000-0000-4000-8000-000000000137
-                  battery_id: 00000000-0000-4000-8000-000000000412
-                  battery_version: 4
-                  credential_id: 00000000-0000-4000-8000-000000000138
-                  destination_holder_employee_id: null
+                  actor_employee_id: 1
+                  battery_id: 1
+                  credential_id: 1
                   destination_location: 2.1.2
-                  destination_status: STORED
-                  id: 00000000-0000-4000-8000-000000000904
+                  id: 4
                   occurred_at: "2026-09-30T11:26:00Z"
-                  source_holder_employee_id: null
                   source_location: 1.2.4
-                  source_status: STORED
                   type: MOVE
               schema:
                 $ref: '#/components/schemas/CommandResult'
@@ -819,18 +765,13 @@ paths:
             application/json:
               example:
                 items:
-                  - actor_employee_id: 00000000-0000-4000-8000-000000000137
-                    battery_id: 00000000-0000-4000-8000-000000000412
-                    battery_version: 1
-                    credential_id: 00000000-0000-4000-8000-000000000138
-                    destination_holder_employee_id: null
+                  - actor_employee_id: 1
+                    battery_id: 1
+                    credential_id: 1
                     destination_location: 1.1.1
-                    destination_status: STORED
-                    id: 00000000-0000-4000-8000-000000000901
+                    id: 1
                     occurred_at: "2026-09-30T09:14:00Z"
-                    source_holder_employee_id: null
                     source_location: null
-                    source_status: null
                     type: STORE
               schema:
                 $ref: '#/components/schemas/OperationList'
@@ -859,11 +800,16 @@ paths:
               inventory_code: B-00412
               actor_credential_value: "0004097281923"
               destination_location: 1.2.4
-              expected_version: 2
             schema:
               $ref: '#/components/schemas/ReturnBattery'
         required: true
       responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+          description: Повтор последней команды той же картой с теми же данными; новая операция не создаётся, возвращается прежняя
         "201":
           content:
             application/json:
@@ -872,25 +818,18 @@ paths:
                   created_at: "2026-09-30T09:14:00Z"
                   current_holder_employee_id: null
                   current_location: 1.2.4
-                  id: 00000000-0000-4000-8000-000000000412
+                  id: 1
                   inventory_code: B-00412
                   serial_number: null
                   status: STORED
-                  updated_at: "2026-09-30T11:26:00Z"
-                  version: 3
                 operation:
-                  actor_employee_id: 00000000-0000-4000-8000-000000000137
-                  battery_id: 00000000-0000-4000-8000-000000000412
-                  battery_version: 3
-                  credential_id: 00000000-0000-4000-8000-000000000138
-                  destination_holder_employee_id: null
+                  actor_employee_id: 1
+                  battery_id: 1
+                  credential_id: 1
                   destination_location: 1.2.4
-                  destination_status: STORED
-                  id: 00000000-0000-4000-8000-000000000903
+                  id: 3
                   occurred_at: "2026-09-30T11:26:00Z"
-                  source_holder_employee_id: 00000000-0000-4000-8000-000000000137
                   source_location: null
-                  source_status: ISSUED
                   type: RETURN
               schema:
                 $ref: '#/components/schemas/CommandResult'
@@ -922,7 +861,7 @@ paths:
         - Commands
   /batteries/take:
     post:
-      description: Явная выдача по ШК АКБ и карте сотрудника. Уже выданная АКБ даёт 409; повтор не возвращает прежний ответ.
+      description: Явная выдача по ШК АКБ и карте сотрудника. Повтор той же картой возвращает 200 и прежнюю операцию; АКБ, выданная другому, даёт 409.
       operationId: takeBattery
       requestBody:
         content:
@@ -930,38 +869,36 @@ paths:
             example:
               inventory_code: B-00412
               actor_credential_value: "0004097281923"
-              expected_version: 1
             schema:
               $ref: '#/components/schemas/TakeBattery'
         required: true
       responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+          description: Повтор последней команды той же картой с теми же данными; новая операция не создаётся, возвращается прежняя
         "201":
           content:
             application/json:
               example:
                 battery:
                   created_at: "2026-09-30T09:14:00Z"
-                  current_holder_employee_id: 00000000-0000-4000-8000-000000000137
+                  current_holder_employee_id: 1
                   current_location: null
-                  id: 00000000-0000-4000-8000-000000000412
+                  id: 1
                   inventory_code: B-00412
                   serial_number: null
                   status: ISSUED
-                  updated_at: "2026-09-30T11:26:00Z"
-                  version: 2
                 operation:
-                  actor_employee_id: 00000000-0000-4000-8000-000000000137
-                  battery_id: 00000000-0000-4000-8000-000000000412
-                  battery_version: 2
-                  credential_id: 00000000-0000-4000-8000-000000000138
-                  destination_holder_employee_id: 00000000-0000-4000-8000-000000000137
+                  actor_employee_id: 1
+                  battery_id: 1
+                  credential_id: 1
                   destination_location: null
-                  destination_status: ISSUED
-                  id: 00000000-0000-4000-8000-000000000902
+                  id: 2
                   occurred_at: "2026-09-30T11:26:00Z"
-                  source_holder_employee_id: null
                   source_location: 1.1.1
-                  source_status: STORED
                   type: TAKE
               schema:
                 $ref: '#/components/schemas/CommandResult'
@@ -1007,12 +944,12 @@ paths:
           content:
             application/json:
               example:
-                credential_id: 00000000-0000-4000-8000-000000000138
+                credential_id: 1
                 employee:
                   created_at: "2026-09-30T09:14:00Z"
                   disabled_at: null
                   display_name: Иван Петров
-                  id: 00000000-0000-4000-8000-000000000137
+                  id: 1
                   is_active: true
                   personnel_number: "004281"
                   updated_at: "2026-09-30T09:14:00Z"
@@ -1055,7 +992,7 @@ paths:
                   - created_at: "2026-09-30T09:14:00Z"
                     disabled_at: null
                     display_name: Иван Петров
-                    id: 00000000-0000-4000-8000-000000000137
+                    id: 1
                     is_active: true
                     personnel_number: "004281"
                     updated_at: "2026-09-30T09:14:00Z"
@@ -1094,7 +1031,7 @@ paths:
                 created_at: "2026-09-30T09:14:00Z"
                 disabled_at: null
                 display_name: Иван Петров
-                id: 00000000-0000-4000-8000-000000000137
+                id: 1
                 is_active: true
                 personnel_number: "004281"
                 updated_at: "2026-09-30T09:14:00Z"
@@ -1137,7 +1074,7 @@ paths:
                 created_at: "2026-09-30T09:14:00Z"
                 disabled_at: null
                 display_name: Иван Петров
-                id: 00000000-0000-4000-8000-000000000137
+                id: 1
                 is_active: true
                 personnel_number: "004281"
                 updated_at: "2026-09-30T09:14:00Z"
@@ -1177,7 +1114,7 @@ paths:
                 created_at: "2026-09-30T09:14:00Z"
                 disabled_at: null
                 display_name: Иван Петров
-                id: 00000000-0000-4000-8000-000000000137
+                id: 1
                 is_active: true
                 personnel_number: "004281"
                 updated_at: "2026-09-30T09:14:00Z"
@@ -1215,14 +1152,12 @@ paths:
               example:
                 items:
                   - created_at: "2026-09-30T09:14:00Z"
-                    current_holder_employee_id: null
-                    current_location: 1.1.1
-                    id: 00000000-0000-4000-8000-000000000412
+                    current_holder_employee_id: 1
+                    current_location: null
+                    id: 1
                     inventory_code: B-00412
                     serial_number: null
-                    status: STORED
-                    updated_at: "2026-09-30T09:14:00Z"
-                    version: 1
+                    status: ISSUED
               schema:
                 $ref: '#/components/schemas/BatteryList'
           description: Успешно
@@ -1252,10 +1187,9 @@ paths:
                 items:
                   - created_at: "2026-09-30T09:14:00Z"
                     disabled_at: null
-                    employee_id: 00000000-0000-4000-8000-000000000137
-                    id: 00000000-0000-4000-8000-000000000138
+                    employee_id: 1
+                    id: 1
                     is_active: true
-                    updated_at: "2026-09-30T09:14:00Z"
                     value: "0004097281923"
               schema:
                 $ref: '#/components/schemas/CredentialList'
@@ -1282,7 +1216,7 @@ paths:
         content:
           application/json:
             example:
-              replaces_credential_id: 00000000-0000-4000-8000-000000000138
+              replaces_credential_id: 1
               value: "0004097281924"
             schema:
               $ref: '#/components/schemas/CreateCredential'
@@ -1294,10 +1228,9 @@ paths:
               example:
                 created_at: "2026-09-30T09:14:00Z"
                 disabled_at: null
-                employee_id: 00000000-0000-4000-8000-000000000137
-                id: 00000000-0000-4000-8000-000000000138
+                employee_id: 1
+                id: 1
                 is_active: true
-                updated_at: "2026-09-30T09:14:00Z"
                 value: "0004097281923"
               schema:
                 $ref: '#/components/schemas/Credential'
@@ -1346,10 +1279,9 @@ paths:
               example:
                 created_at: "2026-09-30T09:14:00Z"
                 disabled_at: "2026-09-30T09:14:00Z"
-                employee_id: 00000000-0000-4000-8000-000000000137
-                id: 00000000-0000-4000-8000-000000000138
+                employee_id: 1
+                id: 1
                 is_active: false
-                updated_at: "2026-09-30T09:14:00Z"
                 value: "0004097281923"
               schema:
                 $ref: '#/components/schemas/Credential'
@@ -1384,18 +1316,13 @@ paths:
             application/json:
               example:
                 items:
-                  - actor_employee_id: 00000000-0000-4000-8000-000000000137
-                    battery_id: 00000000-0000-4000-8000-000000000412
-                    battery_version: 1
-                    credential_id: 00000000-0000-4000-8000-000000000138
-                    destination_holder_employee_id: null
+                  - actor_employee_id: 1
+                    battery_id: 1
+                    credential_id: 1
                     destination_location: 1.1.1
-                    destination_status: STORED
-                    id: 00000000-0000-4000-8000-000000000901
+                    id: 1
                     occurred_at: "2026-09-30T09:14:00Z"
-                    source_holder_employee_id: null
                     source_location: null
-                    source_status: null
                     type: STORE
               schema:
                 $ref: '#/components/schemas/OperationList'
@@ -1420,13 +1347,15 @@ paths:
         - in: query
           name: battery_id
           schema:
-            format: uuid
-            type: string
+            format: int64
+            minimum: 1
+            type: integer
         - in: query
           name: employee_id
           schema:
-            format: uuid
-            type: string
+            format: int64
+            minimum: 1
+            type: integer
         - in: query
           name: location
           schema:
@@ -1458,18 +1387,13 @@ paths:
             application/json:
               example:
                 items:
-                  - actor_employee_id: 00000000-0000-4000-8000-000000000137
-                    battery_id: 00000000-0000-4000-8000-000000000412
-                    battery_version: 1
-                    credential_id: 00000000-0000-4000-8000-000000000138
-                    destination_holder_employee_id: null
+                  - actor_employee_id: 1
+                    battery_id: 1
+                    credential_id: 1
                     destination_location: 1.1.1
-                    destination_status: STORED
-                    id: 00000000-0000-4000-8000-000000000901
+                    id: 1
                     occurred_at: "2026-09-30T09:14:00Z"
-                    source_holder_employee_id: null
                     source_location: null
-                    source_status: null
                     type: STORE
               schema:
                 $ref: '#/components/schemas/OperationList'
@@ -1497,18 +1421,13 @@ paths:
           content:
             application/json:
               example:
-                actor_employee_id: 00000000-0000-4000-8000-000000000137
-                battery_id: 00000000-0000-4000-8000-000000000412
-                battery_version: 1
-                credential_id: 00000000-0000-4000-8000-000000000138
-                destination_holder_employee_id: null
+                actor_employee_id: 1
+                battery_id: 1
+                credential_id: 1
                 destination_location: 1.1.1
-                destination_status: STORED
-                id: 00000000-0000-4000-8000-000000000901
+                id: 1
                 occurred_at: "2026-09-30T09:14:00Z"
-                source_holder_employee_id: null
                 source_location: null
-                source_status: null
                 type: STORE
               schema:
                 $ref: '#/components/schemas/Operation'
