@@ -22,55 +22,70 @@ func scanEmployee(row scanner) (model.Employee, error) {
 }
 
 const credentialSelect = `
-    SELECT c.id, c.employee_id, c.value,
-           c.created_at, c.updated_at, c.disabled_at
+    SELECT c.id, c.employee_id, c.value, c.created_at, c.disabled_at
     FROM employee_credentials c
 `
 
 func scanCredential(row scanner) (model.Credential, error) {
 	var credential model.Credential
 	err := row.Scan(&credential.ID, &credential.EmployeeID, &credential.Value,
-		&credential.CreatedAt, &credential.UpdatedAt, &credential.DisabledAt)
+		&credential.CreatedAt, &credential.DisabledAt)
 	credential.IsActive = credential.DisabledAt == nil
-	credential.CreatedAt, credential.UpdatedAt = credential.CreatedAt.UTC(), credential.UpdatedAt.UTC()
+	credential.CreatedAt = credential.CreatedAt.UTC()
 	credential.DisabledAt = utcPointer(credential.DisabledAt)
 	return credential, err
 }
 
+// Current battery state is the latest operation: TAKE means issued to the
+// owner of its credential, any other type means stored at its location.
 const batterySelect = `
-    SELECT b.id, b.inventory_code, b.serial_number, b.status,
-           b.current_location, b.current_holder_employee_id,
-           b.version, b.created_at, b.updated_at
+    SELECT b.id, b.inventory_code, b.serial_number, b.created_at,
+           l.type, l.location, c.employee_id
     FROM batteries b
+    JOIN LATERAL (
+        SELECT o.type, o.location, o.credential_id
+        FROM battery_operations o
+        WHERE o.battery_id = b.id
+        ORDER BY o.id DESC
+        LIMIT 1
+    ) l ON true
+    JOIN employee_credentials c ON c.id = l.credential_id
 `
 
 func scanBattery(row scanner) (model.Battery, error) {
 	var battery model.Battery
-	err := row.Scan(&battery.ID, &battery.InventoryCode, &battery.SerialNumber, &battery.Status,
-		&battery.CurrentLocation, &battery.CurrentHolderEmployeeID, &battery.Version,
-		&battery.CreatedAt, &battery.UpdatedAt)
-	battery.CreatedAt, battery.UpdatedAt = battery.CreatedAt.UTC(), battery.UpdatedAt.UTC()
+	var lastType string
+	var lastActorID int64
+	err := row.Scan(&battery.ID, &battery.InventoryCode, &battery.SerialNumber, &battery.CreatedAt,
+		&lastType, &battery.CurrentLocation, &lastActorID)
+	battery.CreatedAt = battery.CreatedAt.UTC()
+	battery.Status = model.BatteryStored
+	if lastType == model.OperationTake {
+		battery.Status = model.BatteryIssued
+		battery.CurrentHolderEmployeeID = &lastActorID
+	}
 	return battery, err
 }
 
+// The source location comes from the previous operation and is computed before
+// any filter is applied, so filtered history still shows where a battery came from.
 const operationSelect = `
-    SELECT o.id, o.battery_id, o.battery_version, o.type,
-           o.actor_employee_id, o.credential_id,
-           o.source_status, o.destination_status,
-           o.source_location, o.destination_location,
-           o.source_holder_employee_id, o.destination_holder_employee_id,
-           o.occurred_at
-    FROM battery_operations o
+    SELECT o.id, o.battery_id, o.type, o.actor_employee_id, o.credential_id,
+           o.source_location, o.destination_location, o.occurred_at
+    FROM (
+        SELECT o.id, o.battery_id, o.type, c.employee_id AS actor_employee_id, o.credential_id,
+               lag(o.location) OVER (PARTITION BY o.battery_id ORDER BY o.id) AS source_location,
+               o.location AS destination_location, o.occurred_at
+        FROM battery_operations o
+        JOIN employee_credentials c ON c.id = o.credential_id
+    ) o
 `
 
 func scanOperation(row scanner) (model.Operation, error) {
 	var operation model.Operation
-	err := row.Scan(&operation.ID, &operation.BatteryID, &operation.BatteryVersion, &operation.Type,
+	err := row.Scan(&operation.ID, &operation.BatteryID, &operation.Type,
 		&operation.ActorEmployeeID, &operation.CredentialID,
-		&operation.SourceStatus, &operation.DestinationStatus,
-		&operation.SourceLocation, &operation.DestinationLocation,
-		&operation.SourceHolderEmployeeID, &operation.DestinationHolderEmployeeID,
-		&operation.OccurredAt)
+		&operation.SourceLocation, &operation.DestinationLocation, &operation.OccurredAt)
 	operation.OccurredAt = operation.OccurredAt.UTC()
 	return operation, err
 }

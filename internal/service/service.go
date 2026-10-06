@@ -3,8 +3,6 @@ package service
 import (
 	"battery-storage-pandora/internal/model"
 	"battery-storage-pandora/internal/repository"
-
-	"github.com/google/uuid"
 )
 
 type Service struct {
@@ -13,10 +11,6 @@ type Service struct {
 
 func New(repo *repository.Repository) *Service {
 	return &Service{repo: repo}
-}
-
-func newID() string {
-	return uuid.NewString()
 }
 
 func ClassifyError(err error) *model.Error {

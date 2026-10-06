@@ -4,13 +4,11 @@ import (
 	"battery-storage-pandora/internal/model"
 	"context"
 	"net/http"
-	"strings"
-	"time"
 )
 
 type createCredentialRequest struct {
 	Value                *string `json:"value"`
-	ReplacesCredentialID *string `json:"replaces_credential_id"`
+	ReplacesCredentialID *int64  `json:"replaces_credential_id"`
 }
 
 type disableCredentialRequest struct {
@@ -22,8 +20,13 @@ type resolveCredentialRequest struct {
 }
 
 func (s *Server) createCredential(w http.ResponseWriter, r *http.Request) {
+	employeeID, err := pathID(r, "employee_id")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	var body createCredentialRequest
-	if err := decodeCommand(w, r, &body, "value replaces_credential_id"); err != nil {
+	if err := decodeRequest(w, r, &body, "value replaces_credential_id"); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -31,27 +34,30 @@ func (s *Server) createCredential(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	if err := optionalText(body.ReplacesCredentialID); err != nil {
-		writeError(w, err)
+	if body.ReplacesCredentialID != nil && *body.ReplacesCredentialID < 1 {
+		writeError(w, model.Invalid("Неверный идентификатор карты"))
 		return
-	}
-	if body.ReplacesCredentialID != nil {
-		if !model.ValidUUID(*body.ReplacesCredentialID) {
-			writeError(w, model.Invalid("Неверный UUID карты"))
-			return
-		}
-		*body.ReplacesCredentialID = strings.ToLower(*body.ReplacesCredentialID)
 	}
 
 	input := model.CreateCredentialInput{Value: *body.Value, ReplacesCredentialID: body.ReplacesCredentialID}
 	executeCommand(w, r, func(ctx context.Context) (model.CommandResponse, error) {
-		return s.service.CreateCredential(ctx, r.PathValue("employee_id"), input)
+		return s.service.CreateCredential(ctx, employeeID, input)
 	})
 }
 
 func (s *Server) disableCredential(w http.ResponseWriter, r *http.Request) {
+	employeeID, err := pathID(r, "employee_id")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	credentialID, err := pathID(r, "credential_id")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	var body disableCredentialRequest
-	if err := decodeCommand(w, r, &body, "is_active"); err != nil {
+	if err := decodeRequest(w, r, &body, "is_active"); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -61,7 +67,7 @@ func (s *Server) disableCredential(w http.ResponseWriter, r *http.Request) {
 	}
 
 	executeCommand(w, r, func(ctx context.Context) (model.CommandResponse, error) {
-		return s.service.DisableCredential(ctx, r.PathValue("employee_id"), r.PathValue("credential_id"), *body.IsActive)
+		return s.service.DisableCredential(ctx, employeeID, credentialID, *body.IsActive)
 	})
 }
 
@@ -75,7 +81,7 @@ func (s *Server) resolveCredential(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	ctx, cancel := readContext(r)
 	defer cancel()
 	result, err := s.service.ResolveCredential(ctx, *body.CredentialValue)
 	writeReadResult(w, result, err)

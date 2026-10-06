@@ -6,28 +6,28 @@ import (
 	"time"
 )
 
-func (r *Repository) GetEmployeeByID(ctx context.Context, id string) (model.Employee, error) {
+func (r *Repository) GetEmployeeByID(ctx context.Context, id int64) (model.Employee, error) {
 	return scanEmployee(r.db.QueryRowContext(ctx, employeeSelect+` WHERE e.id = $1`, id))
 }
 
-func (tx *Tx) GetEmployee(ctx context.Context, id string) (model.Employee, error) {
+func (tx *Tx) GetEmployee(ctx context.Context, id int64) (model.Employee, error) {
 	return scanEmployee(tx.tx.QueryRowContext(ctx, employeeSelect+` WHERE e.id = $1`, id))
 }
 
-func (tx *Tx) LockEmployee(ctx context.Context, id string) (model.Employee, error) {
+func (tx *Tx) LockEmployee(ctx context.Context, id int64) (model.Employee, error) {
 	return scanEmployee(tx.tx.QueryRowContext(ctx, employeeSelect+` WHERE e.id = $1 FOR UPDATE`, id))
 }
 
-func (tx *Tx) EmployeeForShare(ctx context.Context, id string) (model.Employee, error) {
+func (tx *Tx) EmployeeForShare(ctx context.Context, id int64) (model.Employee, error) {
 	return scanEmployee(tx.tx.QueryRowContext(ctx, employeeSelect+` WHERE e.id = $1 FOR SHARE`, id))
 }
 
-func (tx *Tx) InsertEmployee(ctx context.Context, id string, input model.CreateEmployeeInput) error {
-	_, err := tx.tx.ExecContext(ctx, `
-        INSERT INTO employees (id, display_name, personnel_number)
-        VALUES ($1, $2, $3)
-    `, id, input.DisplayName, input.PersonnelNumber)
-	return err
+func (tx *Tx) InsertEmployee(ctx context.Context, input model.CreateEmployeeInput) (int64, error) {
+	var id int64
+	err := tx.tx.QueryRowContext(ctx, `
+        INSERT INTO employees (display_name, personnel_number) VALUES ($1, $2) RETURNING id
+    `, input.DisplayName, input.PersonnelNumber).Scan(&id)
+	return id, err
 }
 
 func (tx *Tx) UpdateEmployee(ctx context.Context, employee model.Employee) error {
@@ -39,10 +39,10 @@ func (tx *Tx) UpdateEmployee(ctx context.Context, employee model.Employee) error
 	return err
 }
 
-func (tx *Tx) HasCustody(ctx context.Context, employeeID string) (bool, error) {
+func (tx *Tx) HasCustody(ctx context.Context, employeeID int64) (bool, error) {
 	var hasBatteries bool
-	err := tx.tx.QueryRowContext(ctx, `
-        SELECT EXISTS (SELECT 1 FROM batteries WHERE current_holder_employee_id = $1)
+	err := tx.tx.QueryRowContext(ctx, `SELECT EXISTS (`+batterySelect+`
+        WHERE l.type = 'TAKE' AND c.employee_id = $1)
     `, employeeID).Scan(&hasBatteries)
 	return hasBatteries, err
 }

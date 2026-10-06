@@ -5,28 +5,23 @@ import (
 	"context"
 )
 
-func (r *Repository) GetOperationByID(ctx context.Context, id string) (model.Operation, error) {
-	return scanOperation(r.db.QueryRowContext(ctx, operationSelect+` WHERE o.id = $1`, id))
+// The battery_id condition lets PostgreSQL compute the history window for one battery only.
+func (r *Repository) GetOperationByID(ctx context.Context, id int64) (model.Operation, error) {
+	return scanOperation(r.db.QueryRowContext(ctx, operationSelect+`
+        WHERE o.battery_id = (SELECT battery_id FROM battery_operations WHERE id = $1) AND o.id = $1
+    `, id))
 }
 
-func (tx *Tx) RecordOperation(ctx context.Context, operation *model.Operation) error {
-	err := tx.tx.QueryRowContext(ctx, `
-        INSERT INTO battery_operations (
-            id, battery_id, battery_version, type, actor_employee_id, credential_id,
-            source_status, destination_status, source_location, destination_location,
-            source_holder_employee_id, destination_holder_employee_id
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-        RETURNING occurred_at
-    `, operation.ID, operation.BatteryID, operation.BatteryVersion, operation.Type,
-		operation.ActorEmployeeID, operation.CredentialID, operation.SourceStatus, operation.DestinationStatus,
-		operation.SourceLocation, operation.DestinationLocation, operation.SourceHolderEmployeeID,
-		operation.DestinationHolderEmployeeID).Scan(&operation.OccurredAt)
-	if err != nil {
-		return err
-	}
-	operation.OccurredAt = operation.OccurredAt.UTC()
+func (tx *Tx) LatestOperation(ctx context.Context, batteryID int64) (model.Operation, error) {
+	return scanOperation(tx.tx.QueryRowContext(ctx, operationSelect+`
+        WHERE o.battery_id = $1 ORDER BY o.id DESC LIMIT 1
+    `, batteryID))
+}
 
-	_, err = tx.tx.ExecContext(ctx, `UPDATE batteries SET updated_at = $2 WHERE id = $1`,
-		operation.BatteryID, operation.OccurredAt)
+func (tx *Tx) InsertOperation(ctx context.Context, batteryID int64, kind string, credentialID int64, location *string) error {
+	_, err := tx.tx.ExecContext(ctx, `
+        INSERT INTO battery_operations (battery_id, type, credential_id, location)
+        VALUES ($1, $2, $3, $4)
+    `, batteryID, kind, credentialID, location)
 	return err
 }

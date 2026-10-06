@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -23,16 +24,16 @@ func writeCommand(w http.ResponseWriter, r *http.Request, result model.CommandRe
 	}
 	if result.Status == http.StatusCreated {
 		var resource struct {
-			ID        string `json:"id"`
+			ID        int64 `json:"id"`
 			Operation struct {
-				ID string `json:"id"`
+				ID int64 `json:"id"`
 			} `json:"operation"`
 		}
 		if json.Unmarshal(result.Body, &resource) == nil {
-			if resource.Operation.ID != "" {
-				w.Header().Set("Location", "/api/operations/"+resource.Operation.ID)
-			} else if resource.ID != "" {
-				w.Header().Set("Location", canonicalPath(r)+"/"+resource.ID)
+			if resource.Operation.ID != 0 {
+				w.Header().Set("Location", "/api/operations/"+strconv.FormatInt(resource.Operation.ID, 10))
+			} else if resource.ID != 0 {
+				w.Header().Set("Location", r.URL.Path+"/"+strconv.FormatInt(resource.ID, 10))
 			}
 		}
 	}

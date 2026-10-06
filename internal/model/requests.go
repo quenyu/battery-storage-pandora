@@ -18,7 +18,7 @@ type PatchEmployeeInput struct {
 
 type CreateCredentialInput struct {
 	Value                string
-	ReplacesCredentialID *string
+	ReplacesCredentialID *int64
 }
 
 type RegisterBatteryInput struct {
@@ -29,15 +29,14 @@ type RegisterBatteryInput struct {
 }
 
 type BatteryCommandInput struct {
-	ActorCredential        string
-	DestinationLocation    string
-	ExpectedVersion        *int64
-	ObservedSourceLocation *string
+	ActorCredential     string
+	DestinationLocation string
 }
 
 type CredentialResolution struct {
 	Employee     Employee `json:"employee"`
-	CredentialID string   `json:"credential_id"`
+	CredentialID int64    `json:"credential_id"`
 }
 
-type Filters map[string]string
+// Filters holds validated query parameters; ID filters are already parsed to int64.
+type Filters map[string]any

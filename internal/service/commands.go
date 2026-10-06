@@ -7,15 +7,17 @@ import (
 	"encoding/json"
 )
 
-type command func(*repository.Tx) (any, error)
+// command returns the HTTP status of its result: 201 for a new resource or
+// operation, 200 for an update or a replayed battery command.
+type command func(*repository.Tx) (int, any, error)
 
-func (s *Service) runCommand(ctx context.Context, status int, execute command) (model.CommandResponse, error) {
+func (s *Service) runCommand(ctx context.Context, execute command) (model.CommandResponse, error) {
 	tx, err := s.repo.Begin(ctx)
 	if err != nil {
 		return model.CommandResponse{}, err
 	}
 	defer tx.Rollback()
-	value, err := execute(tx)
+	status, value, err := execute(tx)
 	if err != nil {
 		return model.CommandResponse{}, err
 	}

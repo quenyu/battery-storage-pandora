@@ -4,6 +4,7 @@ import (
 	"battery-storage-pandora/internal/model"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -29,47 +30,46 @@ func parseFilters(r *http.Request, allowed string) (model.Filters, error) {
 			if value != "true" && value != "false" {
 				return nil, model.Invalid("is_active должен быть true или false")
 			}
+			filters[name] = value == "true"
 		case "status":
 			if value != model.BatteryStored && value != model.BatteryIssued {
 				return nil, model.NewError(422, "VALIDATION_FAILED", "Неизвестный статус")
 			}
+			filters[name] = value
 		case "type":
 			if value != model.OperationStore && value != model.OperationTake && value != model.OperationReturn && value != model.OperationMove {
 				return nil, model.NewError(422, "VALIDATION_FAILED", "Неизвестный тип операции")
 			}
+			filters[name] = value
 		case "inventory_code":
 			// Inventory codes are literal identifiers, including their spaces.
 			if !utf8.ValidString(value) || strings.TrimSpace(value) == "" || strings.ContainsRune(value, 0) {
 				return nil, model.NewError(422, "VALIDATION_FAILED", "Пустой код или запрещённый символ")
 			}
+			filters[name] = value
 		case "location":
-			if !utf8.ValidString(value) || strings.TrimSpace(value) != value ||
-				strings.IndexFunc(value, func(r rune) bool { return r < 32 || r == 127 }) >= 0 {
-				return nil, model.NewError(422, "VALIDATION_FAILED", "Недопустимый текстовый фильтр")
-			}
-			if name == "location" && !model.ValidLocation(value) {
+			if !model.ValidLocation(value) {
 				return nil, model.NewError(422, "VALIDATION_FAILED", "Неверный адрес")
 			}
+			filters[name] = value
 		case "from", "to":
 			boundary, err := time.Parse(time.RFC3339Nano, value)
 			if err != nil {
 				return nil, model.Invalid("Неверная дата RFC3339")
 			}
-			value = boundary.UTC().Format(time.RFC3339Nano)
+			filters[name] = boundary.UTC()
 		default:
-			if !model.ValidUUID(value) {
-				return nil, model.Invalid("Неверный UUID фильтра")
+			id, err := strconv.ParseInt(value, 10, 64)
+			if err != nil || id < 1 {
+				return nil, model.Invalid("Неверный идентификатор в фильтре")
 			}
-			value = strings.ToLower(value)
+			filters[name] = id
 		}
-		filters[name] = value
 	}
-	if filters["from"] != "" && filters["to"] != "" {
-		from, _ := time.Parse(time.RFC3339Nano, filters["from"])
-		to, _ := time.Parse(time.RFC3339Nano, filters["to"])
-		if !from.Before(to) {
-			return nil, model.NewError(422, "VALIDATION_FAILED", "from должен быть раньше to")
-		}
+	from, hasFrom := filters["from"].(time.Time)
+	to, hasTo := filters["to"].(time.Time)
+	if hasFrom && hasTo && !from.Before(to) {
+		return nil, model.NewError(422, "VALIDATION_FAILED", "from должен быть раньше to")
 	}
 	return filters, nil
 }

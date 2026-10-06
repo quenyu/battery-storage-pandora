@@ -18,7 +18,7 @@ type patchEmployeeRequest struct {
 
 func (s *Server) createEmployee(w http.ResponseWriter, r *http.Request) {
 	var body createEmployeeRequest
-	if err := decodeCommand(w, r, &body, "display_name personnel_number"); err != nil {
+	if err := decodeRequest(w, r, &body, "display_name personnel_number"); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -38,8 +38,13 @@ func (s *Server) createEmployee(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) patchEmployee(w http.ResponseWriter, r *http.Request) {
+	employeeID, err := pathID(r, "employee_id")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	var body patchEmployeeRequest
-	if err := decodeCommand(w, r, &body, "display_name is_active"); err != nil {
+	if err := decodeRequest(w, r, &body, "display_name is_active"); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -50,6 +55,6 @@ func (s *Server) patchEmployee(w http.ResponseWriter, r *http.Request) {
 
 	input := model.PatchEmployeeInput{DisplayName: body.DisplayName, IsActive: body.IsActive}
 	executeCommand(w, r, func(ctx context.Context) (model.CommandResponse, error) {
-		return s.service.PatchEmployee(ctx, r.PathValue("employee_id"), input)
+		return s.service.PatchEmployee(ctx, employeeID, input)
 	})
 }
