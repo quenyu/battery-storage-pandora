@@ -6,36 +6,26 @@ type CommandResponse struct {
 	Body   []byte
 }
 
-type CreateEmployeeInput struct {
-	DisplayName     string
-	PersonnelNumber *string
+type CreateUserInput struct {
+	Name    string
+	Barcode string
 }
 
-type PatchEmployeeInput struct {
-	DisplayName *string
-	IsActive    *bool
-}
-
-type CreateCredentialInput struct {
-	Value                string
-	ReplacesCredentialID *int64
+// PatchUserInput can rename or disable a user; IsActive is only ever false.
+type PatchUserInput struct {
+	Name     *string
+	IsActive *bool
 }
 
 type RegisterBatteryInput struct {
 	InventoryCode       string
-	SerialNumber        *string
-	ActorCredential     string
+	ActorBarcode        string
 	DestinationLocation string
 }
 
 type BatteryCommandInput struct {
-	ActorCredential     string
+	ActorBarcode        string
 	DestinationLocation string
-}
-
-type CredentialResolution struct {
-	Employee     Employee `json:"employee"`
-	CredentialID int64    `json:"credential_id"`
 }
 
 // Filters holds validated query parameters; ID filters are already parsed to int64.

@@ -18,10 +18,10 @@ func (tx *Tx) LatestOperation(ctx context.Context, batteryID int64) (model.Opera
     `, batteryID))
 }
 
-func (tx *Tx) InsertOperation(ctx context.Context, batteryID int64, kind string, credentialID int64, location *string) error {
+func (tx *Tx) InsertOperation(ctx context.Context, batteryID int64, kind string, userID int64, location *string) error {
 	_, err := tx.tx.ExecContext(ctx, `
-        INSERT INTO battery_operations (battery_id, type, credential_id, location)
+        INSERT INTO battery_operations (battery_id, type, user_id, location)
         VALUES ($1, $2, $3, $4)
-    `, batteryID, kind, credentialID, location)
+    `, batteryID, kind, userID, location)
 	return err
 }
