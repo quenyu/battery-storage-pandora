@@ -41,45 +41,40 @@ class Client:
 
 
 def seed(client):
-    if client.request("GET", "/employees")["items"]:
+    if client.request("GET", "/users")["items"]:
         raise RuntimeError("база не пустая; пересоздайте локальную БД (make db-reset или run-local.ps1 -Reset)")
 
-    employees, cards = [], []
-    for number, name in enumerate(NAMES, 1):
-        employee = client.request("POST", "/employees", {"display_name": name, "personnel_number": f"DEMO-EMP-{number:03d}"})
-        card = client.request("POST", f"/employees/{employee['id']}/credentials", {"value": f"DEMO-CARD-{number:03d}"})
-        employees.append(employee)
-        cards.append(card)
+    users = [
+        client.request("POST", "/users", {"name": name, "barcode": f"DEMO-CARD-{number:03d}"})
+        for number, name in enumerate(NAMES, 1)
+    ]
+    barcodes = [user["barcode"] for user in users]
 
     for number in range(1, 25):
         code = f"DEMO-AKB-{number:03d}"
         location = f"90.{(number - 1) // 8 + 1}.{(number - 1) % 8 + 1}"
-        body = {"inventory_code": code, "actor_credential_value": cards[0]["value"], "destination_location": location}
-        if number % 4:
-            body["serial_number"] = f"DEMO-SN-2026-{number:04d}"
-        client.request("POST", "/batteries", body)
+        client.request("POST", "/batteries", {
+            "inventory_code": code, "actor_barcode": barcodes[0], "destination_location": location,
+        })
 
         if number <= 8 or 15 <= number <= 20:
-            actor = cards[7 if number == 20 else (number - 1) % 6 + 1]["value"]
-            client.request("POST", "/batteries/take", {"inventory_code": code, "actor_credential_value": actor})
+            actor = barcodes[7 if number == 20 else (number - 1) % 6 + 1]
+            client.request("POST", "/batteries/take", {"inventory_code": code, "actor_barcode": actor})
             if number >= 15:
                 client.request("POST", "/batteries/return", {
-                    "inventory_code": code, "actor_credential_value": actor, "destination_location": location,
+                    "inventory_code": code, "actor_barcode": actor, "destination_location": location,
                 })
         elif number <= 14:
             client.request("POST", "/batteries/move", {
-                "inventory_code": code, "actor_credential_value": cards[0]["value"],
+                "inventory_code": code, "actor_barcode": barcodes[0],
                 "destination_location": f"91.1.{number - 8}",
             })
 
-    client.request("POST", f"/employees/{employees[0]['id']}/credentials",
-                   {"value": "DEMO-CARD-009", "replaces_credential_id": cards[0]["id"]})
-    client.request("PATCH", f"/employees/{employees[7]['id']}/credentials/{cards[7]['id']}", {"is_active": False})
-    client.request("PATCH", f"/employees/{employees[7]['id']}", {"is_active": False})
+    client.request("PATCH", f"/users/{users[7]['id']}", {"is_active": False})
 
-    print("Демо-набор: 8 сотрудников, 9 карт, 24 АКБ, 50 операций.")
-    print("16 АКБ на хранении, 8 выданы; 1 сотрудник и 2 карты отключены.")
-    print("Активная карта кладовщика: DEMO-CARD-009; карты сотрудников: DEMO-CARD-002…007.")
+    print("Демо-набор: 8 пользователей (1 отключён), 24 АКБ, 50 операций.")
+    print("16 АКБ на хранении, 8 выданы.")
+    print("ШК кладовщика: DEMO-CARD-001; ШК сотрудников склада: DEMO-CARD-002…007.")
 
 
 def main():

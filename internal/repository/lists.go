@@ -7,21 +7,17 @@ import (
 	"time"
 )
 
-func (r *Repository) ListEmployees(ctx context.Context, filters model.Filters) ([]model.Employee, error) {
-	query := employeeSelect + ` WHERE true`
+func (r *Repository) ListUsers(ctx context.Context, filters model.Filters) ([]model.User, error) {
+	query := userSelect + ` WHERE true`
 	if active, supplied := filters["is_active"]; supplied {
 		if active == true {
-			query += ` AND e.disabled_at IS NULL`
+			query += ` AND u.disabled_at IS NULL`
 		} else {
-			query += ` AND e.disabled_at IS NOT NULL`
+			query += ` AND u.disabled_at IS NOT NULL`
 		}
 	}
-	query += ` ORDER BY e.id`
-	return queryList(ctx, r, query, scanEmployee)
-}
-
-func (r *Repository) ListCredentials(ctx context.Context, employeeID int64) ([]model.Credential, error) {
-	return queryList(ctx, r, credentialSelect+` WHERE c.employee_id = $1 ORDER BY c.id`, scanCredential, employeeID)
+	query += ` ORDER BY u.id`
+	return queryList(ctx, r, query, scanUser)
 }
 
 func (r *Repository) ListBatteries(ctx context.Context, filters model.Filters) ([]model.Battery, error) {
@@ -29,7 +25,7 @@ func (r *Repository) ListBatteries(ctx context.Context, filters model.Filters) (
 	args := []any{}
 	for _, filter := range []struct{ key, expression string }{
 		{"inventory_code", "b.inventory_code = $%d"},
-		{"holder_employee_id", "l.type = 'TAKE' AND c.employee_id = $%d"},
+		{"holder_user_id", "l.type = 'TAKE' AND l.user_id = $%d"},
 		{"location", "l.location = $%d"},
 	} {
 		if value, supplied := filters[filter.key]; supplied {
@@ -47,16 +43,12 @@ func (r *Repository) ListBatteries(ctx context.Context, filters model.Filters) (
 	return queryList(ctx, r, query, scanBattery, args...)
 }
 
-func (r *Repository) ListBatteryOperations(ctx context.Context, batteryID int64) ([]model.Operation, error) {
-	return queryList(ctx, r, operationSelect+` WHERE o.battery_id = $1 ORDER BY o.id DESC`, scanOperation, batteryID)
-}
-
 func (r *Repository) ListOperations(ctx context.Context, filters model.Filters) ([]model.Operation, error) {
 	query := operationSelect + ` WHERE true`
 	args := []any{}
 	for _, filter := range []struct{ key, expression string }{
 		{"battery_id", "o.battery_id = $%[1]d"},
-		{"employee_id", "o.actor_employee_id = $%[1]d"},
+		{"user_id", "o.actor_user_id = $%[1]d"},
 		{"location", "(o.source_location = $%[1]d OR o.destination_location = $%[1]d)"},
 		{"type", "o.type = $%[1]d"},
 		{"from", "o.occurred_at >= $%[1]d"}, {"to", "o.occurred_at < $%[1]d"},

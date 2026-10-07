@@ -29,12 +29,12 @@ func (tx *Tx) LockBattery(ctx context.Context, inventoryCode string) (int64, err
 
 // InsertBattery reports inserted=false when the inventory code already exists.
 // A concurrent insert of the same code is waited for instead of failing.
-func (tx *Tx) InsertBattery(ctx context.Context, inventoryCode string, serialNumber *string) (id int64, inserted bool, err error) {
+func (tx *Tx) InsertBattery(ctx context.Context, inventoryCode string) (id int64, inserted bool, err error) {
 	err = tx.tx.QueryRowContext(ctx, `
-        INSERT INTO batteries (inventory_code, serial_number) VALUES ($1, $2)
+        INSERT INTO batteries (inventory_code) VALUES ($1)
         ON CONFLICT (inventory_code) DO NOTHING
         RETURNING id
-    `, inventoryCode, serialNumber).Scan(&id)
+    `, inventoryCode).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, false, nil
 	}

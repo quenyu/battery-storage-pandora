@@ -19,15 +19,15 @@ func resourceID(r *http.Request, name string) (int64, error) {
 	return pathID(r, name)
 }
 
-func (s *Server) getEmployee(w http.ResponseWriter, r *http.Request) {
-	id, err := resourceID(r, "employee_id")
+func (s *Server) getUser(w http.ResponseWriter, r *http.Request) {
+	id, err := resourceID(r, "user_id")
 	if err != nil {
 		writeError(w, err)
 		return
 	}
 	ctx, cancel := readContext(r)
 	defer cancel()
-	result, err := s.service.GetEmployeeByID(ctx, id)
+	result, err := s.service.GetUserByID(ctx, id)
 	writeReadResult(w, result, err)
 }
 
@@ -55,7 +55,7 @@ func (s *Server) getOperation(w http.ResponseWriter, r *http.Request) {
 	writeReadResult(w, result, err)
 }
 
-func (s *Server) listEmployees(w http.ResponseWriter, r *http.Request) {
+func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 	filters, err := parseFilters(r, "is_active")
 	if err != nil {
 		writeError(w, err)
@@ -63,24 +63,12 @@ func (s *Server) listEmployees(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := readContext(r)
 	defer cancel()
-	result, err := s.service.ListEmployees(ctx, filters)
-	writeReadResult(w, model.ListResult{Items: result}, err)
-}
-
-func (s *Server) listCredentials(w http.ResponseWriter, r *http.Request) {
-	id, err := resourceID(r, "employee_id")
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	ctx, cancel := readContext(r)
-	defer cancel()
-	result, err := s.service.ListCredentials(ctx, id)
+	result, err := s.service.ListUsers(ctx, filters)
 	writeReadResult(w, model.ListResult{Items: result}, err)
 }
 
 func (s *Server) listBatteries(w http.ResponseWriter, r *http.Request) {
-	filters, err := parseFilters(r, "inventory_code status holder_employee_id location")
+	filters, err := parseFilters(r, "inventory_code status holder_user_id location")
 	if err != nil {
 		writeError(w, err)
 		return
@@ -91,44 +79,8 @@ func (s *Server) listBatteries(w http.ResponseWriter, r *http.Request) {
 	writeReadResult(w, model.ListResult{Items: result}, err)
 }
 
-func (s *Server) listCustody(w http.ResponseWriter, r *http.Request) {
-	id, err := resourceID(r, "employee_id")
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	ctx, cancel := readContext(r)
-	defer cancel()
-	result, err := s.service.ListCustody(ctx, id)
-	writeReadResult(w, model.ListResult{Items: result}, err)
-}
-
-func (s *Server) listBatteryOperations(w http.ResponseWriter, r *http.Request) {
-	id, err := resourceID(r, "battery_id")
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	ctx, cancel := readContext(r)
-	defer cancel()
-	result, err := s.service.ListBatteryOperations(ctx, id)
-	writeReadResult(w, model.ListResult{Items: result}, err)
-}
-
-func (s *Server) listEmployeeOperations(w http.ResponseWriter, r *http.Request) {
-	id, err := resourceID(r, "employee_id")
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	ctx, cancel := readContext(r)
-	defer cancel()
-	result, err := s.service.ListEmployeeOperations(ctx, id)
-	writeReadResult(w, model.ListResult{Items: result}, err)
-}
-
 func (s *Server) listOperations(w http.ResponseWriter, r *http.Request) {
-	filters, err := parseFilters(r, "battery_id employee_id location type from to")
+	filters, err := parseFilters(r, "battery_id user_id location type from to")
 	if err != nil {
 		writeError(w, err)
 		return

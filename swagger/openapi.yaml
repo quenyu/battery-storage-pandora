@@ -9,28 +9,19 @@ components:
         format: int64
         minimum: 1
         type: integer
-    credential_id:
-      example: 1
-      in: path
-      name: credential_id
-      required: true
-      schema:
-        format: int64
-        minimum: 1
-        type: integer
-    employee_id:
-      example: 1
-      in: path
-      name: employee_id
-      required: true
-      schema:
-        format: int64
-        minimum: 1
-        type: integer
     operation_id:
       example: 1
       in: path
       name: operation_id
+      required: true
+      schema:
+        format: int64
+        minimum: 1
+        type: integer
+    user_id:
+      example: 1
+      in: path
+      name: user_id
       required: true
       schema:
         format: int64
@@ -60,7 +51,7 @@ components:
               request_id: trace-example
           schema:
             $ref: '#/components/schemas/Error'
-      description: Сотрудник или карта отключены; возврат разрешён только держателю
+      description: Вернуть АКБ может только её держатель
     Error404:
       content:
         application/json:
@@ -72,7 +63,7 @@ components:
               request_id: trace-example
           schema:
             $ref: '#/components/schemas/Error'
-      description: Объект не найден
+      description: Объект не найден; для ШК без активного пользователя — BARCODE_NOT_FOUND
     Error409:
       content:
         application/json:
@@ -84,7 +75,7 @@ components:
               request_id: trace-example
           schema:
             $ref: '#/components/schemas/Error'
-      description: Конфликт состояния
+      description: Конфликт состояния или уникальности, например BATTERY_ALREADY_ISSUED, LOCATION_OCCUPIED, BARCODE_EXISTS, USER_HAS_CUSTODY
     Error413:
       content:
         application/json:
@@ -152,7 +143,7 @@ components:
         created_at:
           format: date-time
           type: string
-        current_holder_employee_id:
+        current_holder_user_id:
           format: int64
           nullable: true
           minimum: 1
@@ -169,9 +160,6 @@ components:
         inventory_code:
           minLength: 1
           type: string
-        serial_number:
-          nullable: true
-          type: string
         status:
           enum:
             - STORED
@@ -180,10 +168,9 @@ components:
       required:
         - id
         - inventory_code
-        - serial_number
         - status
         - current_location
-        - current_holder_employee_id
+        - current_holder_user_id
         - created_at
       type: object
     BatteryList:
@@ -207,140 +194,19 @@ components:
         - battery
         - operation
       type: object
-    CreateCredential:
+    CreateUser:
       additionalProperties: false
-      description: У сотрудника может быть только одна активная личная карта. Для замены укажите ID текущей активной карты; после её отдельного отключения можно создать новую без replaces_credential_id. ШК нельзя передать другому сотруднику, даже после отключения карты.
       properties:
-        replaces_credential_id:
-          description: ID заменяемой карты этого сотрудника. Если активная карта уже есть, нужно указать именно её. Отключение старой и создание новой выполняются атомарно.
-          format: int64
-          minimum: 1
-          type: integer
-        value:
+        barcode:
+          description: Постоянный ШК карты пользователя; уникален навсегда и не меняется.
+          minLength: 1
+          type: string
+        name:
           minLength: 1
           type: string
       required:
-        - value
-      type: object
-    CreateEmployee:
-      additionalProperties: false
-      properties:
-        display_name:
-          minLength: 1
-          type: string
-        personnel_number:
-          minLength: 1
-          type: string
-      required:
-        - display_name
-      type: object
-    Credential:
-      additionalProperties: false
-      properties:
-        created_at:
-          format: date-time
-          type: string
-        disabled_at:
-          format: date-time
-          nullable: true
-          type: string
-        employee_id:
-          format: int64
-          minimum: 1
-          type: integer
-        id:
-          format: int64
-          minimum: 1
-          type: integer
-        is_active:
-          type: boolean
-        value:
-          minLength: 1
-          type: string
-      required:
-        - id
-        - is_active
-        - created_at
-        - disabled_at
-        - employee_id
-        - value
-      type: object
-    CredentialList:
-      additionalProperties: false
-      properties:
-        items:
-          items:
-            $ref: '#/components/schemas/Credential'
-          type: array
-      required:
-        - items
-      type: object
-    CredentialResolution:
-      additionalProperties: false
-      properties:
-        credential_id:
-          format: int64
-          minimum: 1
-          type: integer
-        employee:
-          $ref: '#/components/schemas/Employee'
-      required:
-        - employee
-        - credential_id
-      type: object
-    DisableCredential:
-      additionalProperties: false
-      properties:
-        is_active:
-          enum:
-            - false
-          type: boolean
-      required:
-        - is_active
-      type: object
-    Employee:
-      additionalProperties: false
-      properties:
-        created_at:
-          format: date-time
-          type: string
-        disabled_at:
-          format: date-time
-          nullable: true
-          type: string
-        display_name:
-          minLength: 1
-          type: string
-        id:
-          format: int64
-          minimum: 1
-          type: integer
-        is_active:
-          type: boolean
-        personnel_number:
-          nullable: true
-          type: string
-        updated_at:
-          format: date-time
-          type: string
-      required:
-        - id
-        - is_active
-        - created_at
-        - updated_at
-        - disabled_at
-        - display_name
-        - personnel_number
-      type: object
-    EmployeeList:
-      additionalProperties: false
-      properties:
-        items:
-          items:
-            $ref: '#/components/schemas/Employee'
-          type: array
-      required:
-        - items
+        - name
+        - barcode
       type: object
     Error:
       additionalProperties: false
@@ -376,7 +242,7 @@ components:
           description: Постоянный ШК конкретной АКБ; буквальный инвентарный код.
           minLength: 1
           type: string
-        actor_credential_value:
+        actor_barcode:
           minLength: 1
           type: string
         destination_location:
@@ -385,21 +251,17 @@ components:
           type: string
       required:
         - inventory_code
-        - actor_credential_value
+        - actor_barcode
         - destination_location
       type: object
     Operation:
       additionalProperties: false
       properties:
-        actor_employee_id:
+        actor_user_id:
           format: int64
           minimum: 1
           type: integer
         battery_id:
-          format: int64
-          minimum: 1
-          type: integer
-        credential_id:
           format: int64
           minimum: 1
           type: integer
@@ -431,8 +293,7 @@ components:
         - id
         - battery_id
         - type
-        - actor_employee_id
-        - credential_id
+        - actor_user_id
         - source_location
         - destination_location
         - occurred_at
@@ -447,25 +308,19 @@ components:
       required:
         - items
       type: object
-    PatchEmployee:
+    PatchUser:
       additionalProperties: false
+      description: Переименование или отключение. Отключение необратимо; ШК не меняется и не переиспользуется.
       minProperties: 1
       properties:
-        display_name:
-          minLength: 1
-          type: string
         is_active:
+          enum:
+            - false
           type: boolean
-      required: []
-      type: object
-    ResolveCredential:
-      additionalProperties: false
-      properties:
-        credential_value:
+        name:
           minLength: 1
           type: string
-      required:
-        - credential_value
+      required: []
       type: object
     ReturnBattery:
       additionalProperties: false
@@ -474,7 +329,7 @@ components:
           description: Постоянный ШК конкретной АКБ; буквальный инвентарный код.
           minLength: 1
           type: string
-        actor_credential_value:
+        actor_barcode:
           minLength: 1
           type: string
         destination_location:
@@ -483,13 +338,13 @@ components:
           type: string
       required:
         - inventory_code
-        - actor_credential_value
+        - actor_barcode
         - destination_location
       type: object
     StoreBattery:
       additionalProperties: false
       properties:
-        actor_credential_value:
+        actor_barcode:
           minLength: 1
           type: string
         destination_location:
@@ -499,12 +354,9 @@ components:
         inventory_code:
           minLength: 1
           type: string
-        serial_number:
-          minLength: 1
-          type: string
       required:
         - inventory_code
-        - actor_credential_value
+        - actor_barcode
         - destination_location
       type: object
     TakeBattery:
@@ -514,16 +366,59 @@ components:
           description: Постоянный ШК конкретной АКБ; буквальный инвентарный код.
           minLength: 1
           type: string
-        actor_credential_value:
+        actor_barcode:
           minLength: 1
           type: string
       required:
         - inventory_code
-        - actor_credential_value
+        - actor_barcode
+      type: object
+    User:
+      additionalProperties: false
+      properties:
+        barcode:
+          description: Постоянный ШК карты; уникален навсегда, в том числе после отключения.
+          minLength: 1
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        disabled_at:
+          description: Время отключения; отключение необратимо.
+          format: date-time
+          nullable: true
+          type: string
+        id:
+          format: int64
+          minimum: 1
+          type: integer
+        name:
+          minLength: 1
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+        - id
+        - barcode
+        - name
+        - created_at
+        - updated_at
+        - disabled_at
+      type: object
+    UserList:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/User'
+          type: array
+      required:
+        - items
       type: object
 info:
   title: Pandora — учёт АКБ
-  version: "3"
+  version: "4"
 openapi: 3.0.3
 paths:
   /batteries:
@@ -543,7 +438,7 @@ paths:
               - ISSUED
             type: string
         - in: query
-          name: holder_employee_id
+          name: holder_user_id
           schema:
             format: int64
             minimum: 1
@@ -561,11 +456,10 @@ paths:
               example:
                 items:
                   - created_at: "2026-09-30T09:14:00Z"
-                    current_holder_employee_id: null
+                    current_holder_user_id: null
                     current_location: 1.1.1
                     id: 1
                     inventory_code: B-00412
-                    serial_number: null
                     status: STORED
               schema:
                 $ref: '#/components/schemas/BatteryList'
@@ -580,7 +474,7 @@ paths:
           $ref: '#/components/responses/Error500'
         "503":
           $ref: '#/components/responses/Error503'
-      summary: Поиск и текущие состояния
+      summary: Список АКБ
       tags:
         - Batteries
     post:
@@ -589,7 +483,7 @@ paths:
         content:
           application/json:
             example:
-              actor_credential_value: "0004097281923"
+              actor_barcode: "0004097281923"
               destination_location: 1.1.1
               inventory_code: B-00412
             schema:
@@ -601,23 +495,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CommandResult'
-          description: Повтор последней команды той же картой с теми же данными; новая операция не создаётся, возвращается прежняя
+          description: Повтор последней команды тем же пользователем с теми же данными; новая операция не создаётся, возвращается прежняя
         "201":
           content:
             application/json:
               example:
                 battery:
                   created_at: "2026-09-30T09:14:00Z"
-                  current_holder_employee_id: null
+                  current_holder_user_id: null
                   current_location: 1.1.1
                   id: 1
                   inventory_code: B-00412
-                  serial_number: null
                   status: STORED
                 operation:
-                  actor_employee_id: 1
+                  actor_user_id: 1
                   battery_id: 1
-                  credential_id: 1
                   destination_location: 1.1.1
                   id: 1
                   occurred_at: "2026-09-30T09:14:00Z"
@@ -632,8 +524,6 @@ paths:
                 type: string
         "400":
           $ref: '#/components/responses/Error400'
-        "403":
-          $ref: '#/components/responses/Error403'
         "404":
           $ref: '#/components/responses/Error404'
         "409":
@@ -662,11 +552,10 @@ paths:
             application/json:
               example:
                 created_at: "2026-09-30T09:14:00Z"
-                current_holder_employee_id: null
+                current_holder_user_id: null
                 current_location: 1.1.1
                 id: 1
                 inventory_code: B-00412
-                serial_number: null
                 status: STORED
               schema:
                 $ref: '#/components/schemas/Battery'
@@ -681,7 +570,7 @@ paths:
           $ref: '#/components/responses/Error500'
         "503":
           $ref: '#/components/responses/Error503'
-      summary: Текущее состояние АКБ
+      summary: Получить АКБ по ID
       tags:
         - Batteries
   /batteries/move:
@@ -693,7 +582,7 @@ paths:
           application/json:
             example:
               inventory_code: B-00412
-              actor_credential_value: "0004097281923"
+              actor_barcode: "0004097281923"
               destination_location: 2.1.2
             schema:
               $ref: '#/components/schemas/MoveBattery'
@@ -704,23 +593,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CommandResult'
-          description: Повтор последней команды той же картой с теми же данными; новая операция не создаётся, возвращается прежняя
+          description: Повтор последней команды тем же пользователем с теми же данными; новая операция не создаётся, возвращается прежняя
         "201":
           content:
             application/json:
               example:
                 battery:
                   created_at: "2026-09-30T09:14:00Z"
-                  current_holder_employee_id: null
+                  current_holder_user_id: null
                   current_location: 2.1.2
                   id: 1
                   inventory_code: B-00412
-                  serial_number: null
                   status: STORED
                 operation:
-                  actor_employee_id: 1
+                  actor_user_id: 1
                   battery_id: 1
-                  credential_id: 1
                   destination_location: 2.1.2
                   id: 4
                   occurred_at: "2026-09-30T11:26:00Z"
@@ -735,8 +622,6 @@ paths:
                 type: string
         "400":
           $ref: '#/components/responses/Error400'
-        "403":
-          $ref: '#/components/responses/Error403'
         "404":
           $ref: '#/components/responses/Error404'
         "409":
@@ -751,44 +636,9 @@ paths:
           $ref: '#/components/responses/Error500'
         "503":
           $ref: '#/components/responses/Error503'
-      summary: Переместить между ячейками
+      summary: Переместить АКБ в другую ячейку
       tags:
         - Commands
-  /batteries/{battery_id}/operations:
-    get:
-      operationId: listBatteryOperations
-      parameters:
-        - $ref: '#/components/parameters/battery_id'
-      responses:
-        "200":
-          content:
-            application/json:
-              example:
-                items:
-                  - actor_employee_id: 1
-                    battery_id: 1
-                    credential_id: 1
-                    destination_location: 1.1.1
-                    id: 1
-                    occurred_at: "2026-09-30T09:14:00Z"
-                    source_location: null
-                    type: STORE
-              schema:
-                $ref: '#/components/schemas/OperationList'
-          description: Успешно
-        "400":
-          $ref: '#/components/responses/Error400'
-        "404":
-          $ref: '#/components/responses/Error404'
-        "422":
-          $ref: '#/components/responses/Error422'
-        "500":
-          $ref: '#/components/responses/Error500'
-        "503":
-          $ref: '#/components/responses/Error503'
-      summary: История АКБ по версии
-      tags:
-        - History
   /batteries/return:
     post:
       description: Явный возврат текущим держателем по ШК АКБ в свободную ячейку. destination_location — сканированный адрес или настройка терминала. Уже хранящаяся АКБ даёт 409.
@@ -798,7 +648,7 @@ paths:
           application/json:
             example:
               inventory_code: B-00412
-              actor_credential_value: "0004097281923"
+              actor_barcode: "0004097281923"
               destination_location: 1.2.4
             schema:
               $ref: '#/components/schemas/ReturnBattery'
@@ -809,23 +659,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CommandResult'
-          description: Повтор последней команды той же картой с теми же данными; новая операция не создаётся, возвращается прежняя
+          description: Повтор последней команды тем же пользователем с теми же данными; новая операция не создаётся, возвращается прежняя
         "201":
           content:
             application/json:
               example:
                 battery:
                   created_at: "2026-09-30T09:14:00Z"
-                  current_holder_employee_id: null
+                  current_holder_user_id: null
                   current_location: 1.2.4
                   id: 1
                   inventory_code: B-00412
-                  serial_number: null
                   status: STORED
                 operation:
-                  actor_employee_id: 1
+                  actor_user_id: 1
                   battery_id: 1
-                  credential_id: 1
                   destination_location: 1.2.4
                   id: 3
                   occurred_at: "2026-09-30T11:26:00Z"
@@ -861,14 +709,14 @@ paths:
         - Commands
   /batteries/take:
     post:
-      description: Явная выдача по ШК АКБ и карте сотрудника. Повтор той же картой возвращает 200 и прежнюю операцию; АКБ, выданная другому, даёт 409.
+      description: Явная выдача по ШК АКБ и ШК пользователя. Повтор тем же пользователем возвращает 200 и прежнюю операцию; АКБ, выданная другому, даёт 409.
       operationId: takeBattery
       requestBody:
         content:
           application/json:
             example:
               inventory_code: B-00412
-              actor_credential_value: "0004097281923"
+              actor_barcode: "0004097281923"
             schema:
               $ref: '#/components/schemas/TakeBattery'
         required: true
@@ -878,23 +726,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CommandResult'
-          description: Повтор последней команды той же картой с теми же данными; новая операция не создаётся, возвращается прежняя
+          description: Повтор последней команды тем же пользователем с теми же данными; новая операция не создаётся, возвращается прежняя
         "201":
           content:
             application/json:
               example:
                 battery:
                   created_at: "2026-09-30T09:14:00Z"
-                  current_holder_employee_id: 1
+                  current_holder_user_id: 1
                   current_location: null
                   id: 1
                   inventory_code: B-00412
-                  serial_number: null
                   status: ISSUED
                 operation:
-                  actor_employee_id: 1
+                  actor_user_id: 1
                   battery_id: 1
-                  credential_id: 1
                   destination_location: null
                   id: 2
                   occurred_at: "2026-09-30T11:26:00Z"
@@ -909,8 +755,6 @@ paths:
                 type: string
         "400":
           $ref: '#/components/responses/Error400'
-        "403":
-          $ref: '#/components/responses/Error403'
         "404":
           $ref: '#/components/responses/Error404'
         "409":
@@ -925,421 +769,9 @@ paths:
           $ref: '#/components/responses/Error500'
         "503":
           $ref: '#/components/responses/Error503'
-      summary: Выдать АКБ сотруднику
+      summary: Выдать АКБ пользователю
       tags:
         - Commands
-  /credential-resolutions:
-    post:
-      operationId: resolveCredential
-      requestBody:
-        content:
-          application/json:
-            example:
-              credential_value: "0004097281923"
-            schema:
-              $ref: '#/components/schemas/ResolveCredential'
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              example:
-                credential_id: 1
-                employee:
-                  created_at: "2026-09-30T09:14:00Z"
-                  disabled_at: null
-                  display_name: Иван Петров
-                  id: 1
-                  is_active: true
-                  personnel_number: "004281"
-                  updated_at: "2026-09-30T09:14:00Z"
-              schema:
-                $ref: '#/components/schemas/CredentialResolution'
-          description: Успешно
-        "400":
-          $ref: '#/components/responses/Error400'
-        "403":
-          $ref: '#/components/responses/Error403'
-        "404":
-          $ref: '#/components/responses/Error404'
-        "413":
-          $ref: '#/components/responses/Error413'
-        "415":
-          $ref: '#/components/responses/Error415'
-        "422":
-          $ref: '#/components/responses/Error422'
-        "500":
-          $ref: '#/components/responses/Error500'
-        "503":
-          $ref: '#/components/responses/Error503'
-      summary: Найти человека по активному credential
-      tags:
-        - Employees
-  /employees:
-    get:
-      operationId: listEmployees
-      parameters:
-        - in: query
-          name: is_active
-          schema:
-            type: boolean
-      responses:
-        "200":
-          content:
-            application/json:
-              example:
-                items:
-                  - created_at: "2026-09-30T09:14:00Z"
-                    disabled_at: null
-                    display_name: Иван Петров
-                    id: 1
-                    is_active: true
-                    personnel_number: "004281"
-                    updated_at: "2026-09-30T09:14:00Z"
-              schema:
-                $ref: '#/components/schemas/EmployeeList'
-          description: Успешно
-        "400":
-          $ref: '#/components/responses/Error400'
-        "404":
-          $ref: '#/components/responses/Error404'
-        "422":
-          $ref: '#/components/responses/Error422'
-        "500":
-          $ref: '#/components/responses/Error500'
-        "503":
-          $ref: '#/components/responses/Error503'
-      summary: Список сотрудников
-      tags:
-        - Employees
-    post:
-      operationId: createEmployee
-      requestBody:
-        content:
-          application/json:
-            example:
-              display_name: Иван Петров
-              personnel_number: "004281"
-            schema:
-              $ref: '#/components/schemas/CreateEmployee'
-        required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              example:
-                created_at: "2026-09-30T09:14:00Z"
-                disabled_at: null
-                display_name: Иван Петров
-                id: 1
-                is_active: true
-                personnel_number: "004281"
-                updated_at: "2026-09-30T09:14:00Z"
-              schema:
-                $ref: '#/components/schemas/Employee'
-          description: Создано
-          headers:
-            Location:
-              schema:
-                type: string
-        "400":
-          $ref: '#/components/responses/Error400'
-        "404":
-          $ref: '#/components/responses/Error404'
-        "409":
-          $ref: '#/components/responses/Error409'
-        "413":
-          $ref: '#/components/responses/Error413'
-        "415":
-          $ref: '#/components/responses/Error415'
-        "422":
-          $ref: '#/components/responses/Error422'
-        "500":
-          $ref: '#/components/responses/Error500'
-        "503":
-          $ref: '#/components/responses/Error503'
-      summary: Создать сотрудника
-      tags:
-        - Employees
-  /employees/{employee_id}:
-    get:
-      operationId: getEmployee
-      parameters:
-        - $ref: '#/components/parameters/employee_id'
-      responses:
-        "200":
-          content:
-            application/json:
-              example:
-                created_at: "2026-09-30T09:14:00Z"
-                disabled_at: null
-                display_name: Иван Петров
-                id: 1
-                is_active: true
-                personnel_number: "004281"
-                updated_at: "2026-09-30T09:14:00Z"
-              schema:
-                $ref: '#/components/schemas/Employee'
-          description: Успешно
-        "400":
-          $ref: '#/components/responses/Error400'
-        "404":
-          $ref: '#/components/responses/Error404'
-        "422":
-          $ref: '#/components/responses/Error422'
-        "500":
-          $ref: '#/components/responses/Error500'
-        "503":
-          $ref: '#/components/responses/Error503'
-      summary: Сотрудник по ID
-      tags:
-        - Employees
-    patch:
-      operationId: patchEmployee
-      parameters:
-        - $ref: '#/components/parameters/employee_id'
-      requestBody:
-        content:
-          application/json:
-            example:
-              is_active: false
-            schema:
-              $ref: '#/components/schemas/PatchEmployee'
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              example:
-                created_at: "2026-09-30T09:14:00Z"
-                disabled_at: null
-                display_name: Иван Петров
-                id: 1
-                is_active: true
-                personnel_number: "004281"
-                updated_at: "2026-09-30T09:14:00Z"
-              schema:
-                $ref: '#/components/schemas/Employee'
-          description: Успешно
-        "400":
-          $ref: '#/components/responses/Error400'
-        "404":
-          $ref: '#/components/responses/Error404'
-        "409":
-          $ref: '#/components/responses/Error409'
-        "413":
-          $ref: '#/components/responses/Error413'
-        "415":
-          $ref: '#/components/responses/Error415'
-        "422":
-          $ref: '#/components/responses/Error422'
-        "500":
-          $ref: '#/components/responses/Error500'
-        "503":
-          $ref: '#/components/responses/Error503'
-      summary: Изменить имя или активность
-      tags:
-        - Employees
-  /employees/{employee_id}/batteries:
-    get:
-      operationId: listEmployeeBatteries
-      parameters:
-        - $ref: '#/components/parameters/employee_id'
-      responses:
-        "200":
-          content:
-            application/json:
-              example:
-                items:
-                  - created_at: "2026-09-30T09:14:00Z"
-                    current_holder_employee_id: 1
-                    current_location: null
-                    id: 1
-                    inventory_code: B-00412
-                    serial_number: null
-                    status: ISSUED
-              schema:
-                $ref: '#/components/schemas/BatteryList'
-          description: Успешно
-        "400":
-          $ref: '#/components/responses/Error400'
-        "404":
-          $ref: '#/components/responses/Error404'
-        "422":
-          $ref: '#/components/responses/Error422'
-        "500":
-          $ref: '#/components/responses/Error500'
-        "503":
-          $ref: '#/components/responses/Error503'
-      summary: АКБ у сотрудника сейчас
-      tags:
-        - Batteries
-  /employees/{employee_id}/credentials:
-    get:
-      operationId: listCredentials
-      parameters:
-        - $ref: '#/components/parameters/employee_id'
-      responses:
-        "200":
-          content:
-            application/json:
-              example:
-                items:
-                  - created_at: "2026-09-30T09:14:00Z"
-                    disabled_at: null
-                    employee_id: 1
-                    id: 1
-                    is_active: true
-                    value: "0004097281923"
-              schema:
-                $ref: '#/components/schemas/CredentialList'
-          description: Успешно
-        "400":
-          $ref: '#/components/responses/Error400'
-        "404":
-          $ref: '#/components/responses/Error404'
-        "422":
-          $ref: '#/components/responses/Error422'
-        "500":
-          $ref: '#/components/responses/Error500'
-        "503":
-          $ref: '#/components/responses/Error503'
-      summary: Карты сотрудника, включая историю
-      tags:
-        - Employees
-    post:
-      operationId: createCredential
-      description: Назначает единственную активную карту
-      parameters:
-        - $ref: '#/components/parameters/employee_id'
-      requestBody:
-        content:
-          application/json:
-            example:
-              replaces_credential_id: 1
-              value: "0004097281924"
-            schema:
-              $ref: '#/components/schemas/CreateCredential'
-        required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              example:
-                created_at: "2026-09-30T09:14:00Z"
-                disabled_at: null
-                employee_id: 1
-                id: 1
-                is_active: true
-                value: "0004097281923"
-              schema:
-                $ref: '#/components/schemas/Credential'
-          description: Создано
-          headers:
-            Location:
-              schema:
-                type: string
-        "400":
-          $ref: '#/components/responses/Error400'
-        "404":
-          $ref: '#/components/responses/Error404'
-        "409":
-          $ref: '#/components/responses/Error409'
-        "413":
-          $ref: '#/components/responses/Error413'
-        "415":
-          $ref: '#/components/responses/Error415'
-        "422":
-          $ref: '#/components/responses/Error422'
-        "500":
-          $ref: '#/components/responses/Error500'
-        "503":
-          $ref: '#/components/responses/Error503'
-      summary: Назначить или заменить карту
-      tags:
-        - Employees
-  /employees/{employee_id}/credentials/{credential_id}:
-    patch:
-      operationId: disableCredential
-      parameters:
-        - $ref: '#/components/parameters/employee_id'
-        - $ref: '#/components/parameters/credential_id'
-      requestBody:
-        content:
-          application/json:
-            example:
-              is_active: false
-            schema:
-              $ref: '#/components/schemas/DisableCredential'
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              example:
-                created_at: "2026-09-30T09:14:00Z"
-                disabled_at: "2026-09-30T09:14:00Z"
-                employee_id: 1
-                id: 1
-                is_active: false
-                value: "0004097281923"
-              schema:
-                $ref: '#/components/schemas/Credential'
-          description: Успешно
-        "400":
-          $ref: '#/components/responses/Error400'
-        "404":
-          $ref: '#/components/responses/Error404'
-        "409":
-          $ref: '#/components/responses/Error409'
-        "413":
-          $ref: '#/components/responses/Error413'
-        "415":
-          $ref: '#/components/responses/Error415'
-        "422":
-          $ref: '#/components/responses/Error422'
-        "500":
-          $ref: '#/components/responses/Error500'
-        "503":
-          $ref: '#/components/responses/Error503'
-      summary: Деактивировать credential
-      tags:
-        - Employees
-  /employees/{employee_id}/operations:
-    get:
-      operationId: listEmployeeOperations
-      parameters:
-        - $ref: '#/components/parameters/employee_id'
-      responses:
-        "200":
-          content:
-            application/json:
-              example:
-                items:
-                  - actor_employee_id: 1
-                    battery_id: 1
-                    credential_id: 1
-                    destination_location: 1.1.1
-                    id: 1
-                    occurred_at: "2026-09-30T09:14:00Z"
-                    source_location: null
-                    type: STORE
-              schema:
-                $ref: '#/components/schemas/OperationList'
-          description: Успешно
-        "400":
-          $ref: '#/components/responses/Error400'
-        "404":
-          $ref: '#/components/responses/Error404'
-        "422":
-          $ref: '#/components/responses/Error422'
-        "500":
-          $ref: '#/components/responses/Error500'
-        "503":
-          $ref: '#/components/responses/Error503'
-      summary: История участия сотрудника
-      tags:
-        - History
   /operations:
     get:
       operationId: listOperations
@@ -1351,7 +783,7 @@ paths:
             minimum: 1
             type: integer
         - in: query
-          name: employee_id
+          name: user_id
           schema:
             format: int64
             minimum: 1
@@ -1387,9 +819,8 @@ paths:
             application/json:
               example:
                 items:
-                  - actor_employee_id: 1
+                  - actor_user_id: 1
                     battery_id: 1
-                    credential_id: 1
                     destination_location: 1.1.1
                     id: 1
                     occurred_at: "2026-09-30T09:14:00Z"
@@ -1408,7 +839,7 @@ paths:
           $ref: '#/components/responses/Error500'
         "503":
           $ref: '#/components/responses/Error503'
-      summary: Общий журнал и фильтры
+      summary: Список операций
       tags:
         - History
   /operations/{operation_id}:
@@ -1421,9 +852,8 @@ paths:
           content:
             application/json:
               example:
-                actor_employee_id: 1
+                actor_user_id: 1
                 battery_id: 1
-                credential_id: 1
                 destination_location: 1.1.1
                 id: 1
                 occurred_at: "2026-09-30T09:14:00Z"
@@ -1442,13 +872,176 @@ paths:
           $ref: '#/components/responses/Error500'
         "503":
           $ref: '#/components/responses/Error503'
-      summary: Неизменяемая операция
+      summary: Получить операцию по ID
       tags:
         - History
+  /users:
+    get:
+      operationId: listUsers
+      parameters:
+        - in: query
+          name: is_active
+          schema:
+            type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              example:
+                items:
+                  - barcode: "0004097281923"
+                    created_at: "2026-09-30T09:14:00Z"
+                    disabled_at: null
+                    id: 1
+                    name: Иван Петров
+                    updated_at: "2026-09-30T09:14:00Z"
+              schema:
+                $ref: '#/components/schemas/UserList'
+          description: Успешно
+        "400":
+          $ref: '#/components/responses/Error400'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: Список пользователей
+      tags:
+        - Users
+    post:
+      description: ШК уникален навсегда, в том числе среди отключённых пользователей; повтор даёт 409 BARCODE_EXISTS.
+      operationId: createUser
+      requestBody:
+        content:
+          application/json:
+            example:
+              barcode: "0004097281923"
+              name: Иван Петров
+            schema:
+              $ref: '#/components/schemas/CreateUser'
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              example:
+                barcode: "0004097281923"
+                created_at: "2026-09-30T09:14:00Z"
+                disabled_at: null
+                id: 1
+                name: Иван Петров
+                updated_at: "2026-09-30T09:14:00Z"
+              schema:
+                $ref: '#/components/schemas/User'
+          description: Создано
+          headers:
+            Location:
+              schema:
+                type: string
+        "400":
+          $ref: '#/components/responses/Error400'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "409":
+          $ref: '#/components/responses/Error409'
+        "413":
+          $ref: '#/components/responses/Error413'
+        "415":
+          $ref: '#/components/responses/Error415'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: Создать пользователя
+      tags:
+        - Users
+  /users/{user_id}:
+    get:
+      operationId: getUser
+      parameters:
+        - $ref: '#/components/parameters/user_id'
+      responses:
+        "200":
+          content:
+            application/json:
+              example:
+                barcode: "0004097281923"
+                created_at: "2026-09-30T09:14:00Z"
+                disabled_at: null
+                id: 1
+                name: Иван Петров
+                updated_at: "2026-09-30T09:14:00Z"
+              schema:
+                $ref: '#/components/schemas/User'
+          description: Успешно
+        "400":
+          $ref: '#/components/responses/Error400'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: Получить пользователя по ID
+      tags:
+        - Users
+    patch:
+      description: Переименование или необратимое отключение. Включить пользователя нельзя (422). Пользователя с выданными АКБ отключить нельзя (409 USER_HAS_CUSTODY).
+      operationId: patchUser
+      parameters:
+        - $ref: '#/components/parameters/user_id'
+      requestBody:
+        content:
+          application/json:
+            example:
+              is_active: false
+            schema:
+              $ref: '#/components/schemas/PatchUser'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              example:
+                barcode: "0004097281923"
+                created_at: "2026-09-30T09:14:00Z"
+                disabled_at: "2026-10-01T08:00:00Z"
+                id: 1
+                name: Иван Петров
+                updated_at: "2026-10-01T08:00:00Z"
+              schema:
+                $ref: '#/components/schemas/User'
+          description: Успешно
+        "400":
+          $ref: '#/components/responses/Error400'
+        "404":
+          $ref: '#/components/responses/Error404'
+        "409":
+          $ref: '#/components/responses/Error409'
+        "413":
+          $ref: '#/components/responses/Error413'
+        "415":
+          $ref: '#/components/responses/Error415'
+        "422":
+          $ref: '#/components/responses/Error422'
+        "500":
+          $ref: '#/components/responses/Error500'
+        "503":
+          $ref: '#/components/responses/Error503'
+      summary: Переименовать или отключить пользователя
+      tags:
+        - Users
 servers:
   - url: /api
 tags:
-  - name: Employees
+  - name: Users
   - name: Batteries
   - name: Commands
   - name: History

@@ -8,34 +8,29 @@ import (
 
 type registerBatteryRequest struct {
 	InventoryCode       *string `json:"inventory_code"`
-	SerialNumber        *string `json:"serial_number"`
-	ActorCredential     *string `json:"actor_credential_value"`
+	ActorBarcode        *string `json:"actor_barcode"`
 	DestinationLocation *string `json:"destination_location"`
 }
 
 type takeBatteryRequest struct {
-	InventoryCode   *string `json:"inventory_code"`
-	ActorCredential *string `json:"actor_credential_value"`
+	InventoryCode *string `json:"inventory_code"`
+	ActorBarcode  *string `json:"actor_barcode"`
 }
 
 // placeBatteryRequest is the body of RETURN and MOVE.
 type placeBatteryRequest struct {
 	InventoryCode       *string `json:"inventory_code"`
-	ActorCredential     *string `json:"actor_credential_value"`
+	ActorBarcode        *string `json:"actor_barcode"`
 	DestinationLocation *string `json:"destination_location"`
 }
 
 func (s *Server) registerBattery(w http.ResponseWriter, r *http.Request) {
 	var body registerBatteryRequest
-	if err := decodeRequest(w, r, &body, "inventory_code serial_number actor_credential_value destination_location"); err != nil {
+	if err := decodeRequest(w, r, &body, "inventory_code actor_barcode destination_location"); err != nil {
 		writeError(w, err)
 		return
 	}
-	if err := requiredText(body.InventoryCode, body.ActorCredential, body.DestinationLocation); err != nil {
-		writeError(w, err)
-		return
-	}
-	if err := optionalText(body.SerialNumber); err != nil {
+	if err := requiredText(body.InventoryCode, body.ActorBarcode, body.DestinationLocation); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -46,8 +41,7 @@ func (s *Server) registerBattery(w http.ResponseWriter, r *http.Request) {
 
 	input := model.RegisterBatteryInput{
 		InventoryCode:       *body.InventoryCode,
-		SerialNumber:        body.SerialNumber,
-		ActorCredential:     *body.ActorCredential,
+		ActorBarcode:        *body.ActorBarcode,
 		DestinationLocation: *body.DestinationLocation,
 	}
 	executeCommand(w, r, func(ctx context.Context) (model.CommandResponse, error) {
@@ -57,16 +51,16 @@ func (s *Server) registerBattery(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) takeBattery(w http.ResponseWriter, r *http.Request) {
 	var body takeBatteryRequest
-	if err := decodeRequest(w, r, &body, "inventory_code actor_credential_value"); err != nil {
+	if err := decodeRequest(w, r, &body, "inventory_code actor_barcode"); err != nil {
 		writeError(w, err)
 		return
 	}
-	if err := requiredText(body.InventoryCode, body.ActorCredential); err != nil {
+	if err := requiredText(body.InventoryCode, body.ActorBarcode); err != nil {
 		writeError(w, err)
 		return
 	}
 
-	input := model.BatteryCommandInput{ActorCredential: *body.ActorCredential}
+	input := model.BatteryCommandInput{ActorBarcode: *body.ActorBarcode}
 	executeCommand(w, r, func(ctx context.Context) (model.CommandResponse, error) {
 		return s.service.TakeBattery(ctx, *body.InventoryCode, input)
 	})
@@ -83,11 +77,11 @@ func (s *Server) moveBattery(w http.ResponseWriter, r *http.Request) {
 func (s *Server) placeBattery(w http.ResponseWriter, r *http.Request,
 	execute func(context.Context, string, model.BatteryCommandInput) (model.CommandResponse, error)) {
 	var body placeBatteryRequest
-	if err := decodeRequest(w, r, &body, "inventory_code actor_credential_value destination_location"); err != nil {
+	if err := decodeRequest(w, r, &body, "inventory_code actor_barcode destination_location"); err != nil {
 		writeError(w, err)
 		return
 	}
-	if err := requiredText(body.InventoryCode, body.ActorCredential, body.DestinationLocation); err != nil {
+	if err := requiredText(body.InventoryCode, body.ActorBarcode, body.DestinationLocation); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -96,7 +90,7 @@ func (s *Server) placeBattery(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	input := model.BatteryCommandInput{ActorCredential: *body.ActorCredential, DestinationLocation: *body.DestinationLocation}
+	input := model.BatteryCommandInput{ActorBarcode: *body.ActorBarcode, DestinationLocation: *body.DestinationLocation}
 	executeCommand(w, r, func(ctx context.Context) (model.CommandResponse, error) {
 		return execute(ctx, *body.InventoryCode, input)
 	})
