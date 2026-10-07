@@ -107,7 +107,7 @@ func optionalText(values ...*string) error {
 func validateLocations(values ...*string) error {
 	for _, value := range values {
 		if value != nil && !model.ValidLocation(*value) {
-			return model.NewError(422, "VALIDATION_FAILED", "Адрес: три положительных числа через точку, без ведущих нулей")
+			return model.NewError(422, "VALIDATION_FAILED", "Адрес: 1.полка.ячейка — шкаф 1, полка и ячейка — положительные числа без ведущих нулей")
 		}
 	}
 	return nil
