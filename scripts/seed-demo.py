@@ -52,7 +52,7 @@ def seed(client):
 
     for number in range(1, 25):
         code = f"DEMO-AKB-{number:03d}"
-        location = f"90.{(number - 1) // 8 + 1}.{(number - 1) % 8 + 1}"
+        location = f"1.{(number - 1) // 8 + 1}.{(number - 1) % 8 + 1}"
         client.request("POST", "/batteries", {
             "inventory_code": code, "actor_barcode": barcodes[0], "destination_location": location,
         })
@@ -67,7 +67,7 @@ def seed(client):
         elif number <= 14:
             client.request("POST", "/batteries/move", {
                 "inventory_code": code, "actor_barcode": barcodes[0],
-                "destination_location": f"91.1.{number - 8}",
+                "destination_location": f"1.4.{number - 8}",
             })
 
     client.request("PATCH", f"/users/{users[7]['id']}", {"is_active": False})

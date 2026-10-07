@@ -48,8 +48,8 @@ func parseFilters(r *http.Request, allowed string) (model.Filters, error) {
 			}
 			filters[name] = value
 		case "location":
-			if !model.ValidLocation(value) {
-				return nil, model.NewError(422, "VALIDATION_FAILED", "Неверный адрес")
+			if err := validateLocations(&value); err != nil {
+				return nil, err
 			}
 			filters[name] = value
 		case "from", "to":
